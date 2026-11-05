@@ -20,6 +20,7 @@ import {
 } from '../domain/geometry.ts';
 import type { NoteId } from '../domain/ids.ts';
 import { DEFAULT_NOTE_SIZE, MIN_NOTE_SIZE, type Note } from '../domain/note.ts';
+import type { NoteEditing } from './useNoteEditing.ts';
 
 type Gesture =
   | { readonly kind: 'idle' }
@@ -89,6 +90,7 @@ export interface BoardGestureHandlers {
   readonly onPointerMove: (event: PointerEvent<HTMLElement>) => void;
   readonly onPointerUp: (event: PointerEvent<HTMLElement>) => void;
   readonly onPointerCancel: (event: PointerEvent<HTMLElement>) => void;
+  readonly onDoubleClick: () => void;
   readonly onLostPointerCapture: (event: PointerEvent<HTMLElement>) => void;
 }
 
@@ -124,11 +126,13 @@ type PressTarget =
   | { readonly kind: 'board' }
   | { readonly kind: 'note'; readonly note: Note }
   | { readonly kind: 'resizeHandle'; readonly note: Note }
-  | { readonly kind: 'trash' };
+  | { readonly kind: 'trash' }
+  | { readonly kind: 'editor' };
 
 /**
- * What a press landed on: the trash (a drop target, not a press target), a note's resize handle,
- * the note itself, or the empty board (also for an id no longer in `notes`).
+ * What a press landed on: the trash (a drop target, not a press target), the text editor of the
+ * note being edited, a note's resize handle, the note itself, or the empty board (also for an id
+ * no longer in `notes`).
  */
 function classifyPress(
   target: EventTarget,
@@ -137,6 +141,7 @@ function classifyPress(
 ): PressTarget {
   if (!(target instanceof Element)) return { kind: 'board' };
   if (trash !== null && trash.contains(target)) return { kind: 'trash' };
+  if (target.closest('[data-note-editor]') !== null) return { kind: 'editor' };
   const raw = target.closest('[data-note-id]')?.getAttribute('data-note-id');
   const note = notes.find((candidate) => candidate.id === raw);
   if (note === undefined) return { kind: 'board' };
@@ -160,7 +165,9 @@ function rectOnBoard(element: Element | null, boardOrigin: Point): Rect | null {
  * Owns the single pointer gesture of the whole board: classifies each primary-button press as a
  * note, a note's resize handle, the trash (ignored) or the empty board, and turns
  * press-drag-release into board actions: moving the note, resizing it, or creating a new one. A
- * move released with the pointer over the trash deletes the note. Escape cancels any gesture.
+ * move released with the pointer over the trash deletes the note. Escape cancels any gesture. A
+ * double-click on a note opens its editor; a press in the editor starts nothing; any other press
+ * finishes editing.
  *
  * The pointer is captured on the board element, not on the pressed note:
  * - one element receives every event of the gesture, the same element whose handlers own it, so
@@ -178,8 +185,10 @@ export function useBoardGesture(
   notes: readonly Note[],
   dispatch: Dispatch<BoardAction>,
   createNoteId: () => NoteId,
+  editing: Pick<NoteEditing, 'editingId' | 'startEditing' | 'stopEditing'>,
 ): BoardGesture {
   const gesture = useRef<Gesture>({ kind: 'idle' });
+  const lastPressedNote = useRef<NoteId | null>(null);
   const trashRef = useRef<HTMLDivElement>(null);
   // The only gesture state that renders, because it is drawn; everything else stays in the ref.
   const [view, setView] = useState<GestureView>(IDLE_VIEW);
@@ -213,11 +222,14 @@ export function useBoardGesture(
       }
       case 'creating': {
         if (outcome === 'completed') {
+          const id = createNoteId();
           dispatch({
             type: 'note/created',
-            id: createNoteId(),
+            id,
             rect: ended.draft ?? rectAt(ended.anchor, DEFAULT_NOTE_SIZE, ended.bounds),
           });
+          // A new note is empty: it opens ready for typing.
+          editing.startEditing(id);
         }
         break;
       }
@@ -268,9 +280,21 @@ export function useBoardGesture(
       // active.
       if (event.button !== 0 || gesture.current.kind !== 'idle') return;
       const pressed = classifyPress(event.target, notes, trashRef.current);
+      // The note a double-click edits: the browser targets the double-click at the board, which
+      // holds the capture, so it can't say which note was clicked. Any other press resets it.
+      lastPressedNote.current = pressed.kind === 'note' ? pressed.note.id : null;
       // The trash is where notes are dropped, not something to press: a press on it starts no
       // gesture, so a click on the trash doesn't create a note under it.
       if (pressed.kind === 'trash') return;
+      // A press in the editor belongs to the text (caret, selection): it starts no gesture.
+      if (pressed.kind === 'editor') return;
+      // Any other press finishes editing; the browser would blur the editor only after this.
+      if (editing.editingId !== null) {
+        editing.stopEditing();
+        // On the empty board that is all it does: a click to leave a note must not leave a new
+        // note behind.
+        if (pressed.kind === 'board') return;
+      }
       const board = event.currentTarget;
       // Capture before writing the gesture: if setPointerCapture throws (NotFoundError for an
       // inactive pointer), the gesture stays idle instead of stuck. Every press captures, the
@@ -394,6 +418,10 @@ export function useBoardGesture(
     },
     onPointerCancel: (event) => {
       endGesture(event, 'aborted');
+    },
+    onDoubleClick: () => {
+      const id = lastPressedNote.current;
+      if (id !== null && notes.some((note) => note.id === id)) editing.startEditing(id);
     },
     onLostPointerCapture: (event) => {
       // The board captures the pointer, so its own lost capture targets the board itself. One

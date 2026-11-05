@@ -3,6 +3,7 @@ import type { BoardAction } from '../domain/board.ts';
 import type { NoteId } from '../domain/ids.ts';
 import type { Note } from '../domain/note.ts';
 import { useBoardGesture, type GestureView } from '../interaction/useBoardGesture.ts';
+import { useNoteEditing } from '../interaction/useNoteEditing.ts';
 import styles from './Board.module.css';
 import { NoteView } from './NoteView.tsx';
 import { rectStyle } from './rectStyle.ts';
@@ -15,7 +16,8 @@ interface BoardProps {
 }
 
 export function Board({ notes, dispatch, createNoteId }: BoardProps) {
-  const { handlers, view, trashRef } = useBoardGesture(notes, dispatch, createNoteId);
+  const editing = useNoteEditing(dispatch);
+  const { handlers, view, trashRef } = useBoardGesture(notes, dispatch, createNoteId, editing);
   const preview = view.kind === 'creating' ? view.preview : null;
 
   return (
@@ -24,6 +26,7 @@ export function Board({ notes, dispatch, createNoteId }: BoardProps) {
       aria-label="Sticky notes board"
       data-gesture={view.kind}
       {...handlers}
+      {...editing.handlers}
     >
       {notes.length === 0 && preview === null && (
         <div className={styles.hint}>
@@ -33,7 +36,7 @@ export function Board({ notes, dispatch, createNoteId }: BoardProps) {
       )}
       <div className={styles.notes}>
         {notes.map((note) => (
-          <NoteView key={note.id} note={note} />
+          <NoteView key={note.id} note={note} editing={note.id === editing.editingId} />
         ))}
       </div>
       {preview !== null && (

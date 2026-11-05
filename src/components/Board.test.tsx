@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { useReducer, useState } from 'react';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { boardReducer, initialBoardState, type BoardState } from '../domain/board.ts';
@@ -224,6 +224,36 @@ function rendersDuring(action: () => void): string[] {
   return rendered;
 }
 
+/** The open text editor, or null when no note is being edited. */
+function editor(): HTMLTextAreaElement | null {
+  const element = screen.queryByRole('textbox');
+  return element instanceof HTMLTextAreaElement ? element : null;
+}
+
+function editorOrThrow(): HTMLTextAreaElement {
+  const element = editor();
+  if (element === null) throw new Error('no note editor');
+  return element;
+}
+
+/** Two clicks on `element`, then the double-click. */
+function doubleClick(element: HTMLElement): void {
+  press(element, 50, 50);
+  release();
+  press(element, 50, 50);
+  release();
+  // With the pointer captured on the board, the browser targets the double-click at the board,
+  // not the note.
+  fireEvent.doubleClick(board());
+}
+
+/** `state` with note `index`'s text set to `text`. */
+function withText(state: BoardState, index: number, text: string): BoardState {
+  const note = state.notes[index];
+  if (note === undefined) throw new Error(`no note at index ${String(index)}`);
+  return boardReducer(state, { type: 'note/textChanged', id: note.id, text });
+}
+
 describe('Board', () => {
   describe('render gate', () => {
     it.each([1, 50])('moving one note re-renders only that note (%i notes)', (count) => {
@@ -355,6 +385,43 @@ describe('Board', () => {
 
       expect(rendered).toEqual(['0']);
       expect(positionOf(noteAt(0))).toEqual({ x: 10, y: 10 });
+    });
+
+    it('typing re-renders only the edited note (50 notes)', () => {
+      renderBoard(boardWith(50));
+      doubleClick(noteAt(0));
+      const open = editorOrThrow();
+
+      const rendered = rendersDuring(() => {
+        fireEvent.change(open, { target: { value: 'a' } });
+      });
+
+      expect(rendered).toEqual(['0']);
+      // The text really changed, so the count can't pass by nothing rendering.
+      fireEvent.keyDown(open, { key: 'Escape' });
+      expect(within(noteAt(0)).getByText('a')).not.toBeNull();
+    });
+
+    it('opening and closing the editor re-renders only that note (50 notes)', () => {
+      renderBoard(boardWith(50));
+      press(noteAt(0), 50, 50);
+      release();
+      press(noteAt(0), 50, 50);
+      release();
+
+      const opening = rendersDuring(() => {
+        fireEvent.doubleClick(board());
+      });
+
+      expect(opening).toEqual(['0']);
+
+      const open = editorOrThrow();
+      const closing = rendersDuring(() => {
+        fireEvent.keyDown(open, { key: 'Escape' });
+      });
+
+      expect(closing).toEqual(['0']);
+      expect(editor()).toBeNull();
     });
   });
 
@@ -656,6 +723,8 @@ describe('Board', () => {
       release();
       expect(rectOf(noteAt(1))).toEqual({ x: 300, y: 200, width: 200, height: 200 });
 
+      // Finish editing the note just created: a click while editing only does that.
+      fireEvent.keyDown(editorOrThrow(), { key: 'Escape' });
       // The click path converts too.
       press(board(), 340, 250);
       release();
@@ -1100,6 +1169,193 @@ describe('Board', () => {
       release();
 
       expect(hint()).not.toBeNull();
+    });
+  });
+
+  describe('editing text', () => {
+    it('double-clicking a note opens its editor, focused, caret after the text', () => {
+      renderBoard(withText(boardWith(1), 0, 'Hello'));
+
+      doubleClick(noteAt(0));
+
+      const open = editorOrThrow();
+      expect(noteAt(0).contains(open)).toBe(true);
+      expect(open.value).toBe('Hello');
+      expect(document.activeElement).toBe(open);
+      expect(open.selectionStart).toBe(5);
+    });
+
+    it("typing changes only that note's text, and the text stays after editing", () => {
+      renderBoard(boardWith(2));
+      doubleClick(noteAt(0));
+
+      fireEvent.change(editorOrThrow(), { target: { value: 'Buy milk' } });
+      fireEvent.keyDown(editorOrThrow(), { key: 'Escape' });
+
+      expect(editor()).toBeNull();
+      expect(within(noteAt(0)).getByText('Buy milk')).not.toBeNull();
+      expect(within(noteAt(1)).getByText('Double-click to write')).not.toBeNull();
+    });
+
+    it('Escape in the editor leaves editing and changes nothing else', () => {
+      renderBoard(boardWith(1));
+      doubleClick(noteAt(0));
+      const before = rectOf(noteAt(0));
+
+      fireEvent.keyDown(editorOrThrow(), { key: 'Escape' });
+
+      expect(editor()).toBeNull();
+      expect(rectOf(noteAt(0))).toEqual(before);
+      expect(gestureOf()).toBe('idle');
+    });
+
+    it('leaving the editor keeps the text', () => {
+      renderBoard(boardWith(1));
+      doubleClick(noteAt(0));
+
+      fireEvent.change(editorOrThrow(), { target: { value: 'Call Ana' } });
+      fireEvent.blur(editorOrThrow());
+
+      expect(editor()).toBeNull();
+      expect(within(noteAt(0)).getByText('Call Ana')).not.toBeNull();
+    });
+
+    it('a note created by a click opens its editor', () => {
+      renderBoard(initialBoardState);
+
+      press(board(), 300, 200);
+      release();
+
+      const open = editorOrThrow();
+      expect(noteAt(0).contains(open)).toBe(true);
+      expect(document.activeElement).toBe(open);
+    });
+
+    it('a note created by a drag opens its editor', () => {
+      renderBoard(initialBoardState);
+
+      press(board(), 300, 200);
+      move(500, 400);
+      release();
+
+      const open = editorOrThrow();
+      expect(noteAt(0).contains(open)).toBe(true);
+      expect(document.activeElement).toBe(open);
+    });
+
+    it('an empty note shows a placeholder, a note with text shows its text', () => {
+      renderBoard(withText(boardWith(2), 1, 'Hi'));
+
+      expect(within(noteAt(0)).getByText('Double-click to write')).not.toBeNull();
+      expect(within(noteAt(1)).getByText('Hi')).not.toBeNull();
+      expect(within(noteAt(1)).queryByText('Double-click to write')).toBeNull();
+
+      doubleClick(noteAt(0));
+
+      const open = editorOrThrow();
+      expect(open.placeholder).toBe('Type a note');
+      expect(open.getAttribute('aria-label')).toBe('Note text');
+    });
+
+    it('pressing inside the editor starts no gesture', () => {
+      renderBoard(boardWith(2));
+      doubleClick(noteAt(0));
+      const z = noteAt(0).style.zIndex;
+      setPointerCapture.mockClear();
+
+      press(editorOrThrow(), 50, 50);
+
+      expect(setPointerCapture).not.toHaveBeenCalled();
+      expect(gestureOf()).toBe('idle');
+      expect(noteAt(0).style.zIndex).toBe(z);
+
+      move(200, 200);
+
+      expect(positionOf(noteAt(0))).toEqual({ x: 10, y: 10 });
+
+      release();
+
+      expect(notes()).toHaveLength(2);
+      expect(editor()).not.toBeNull();
+    });
+
+    it("pressing the edited note's handle finishes editing and resizes it", () => {
+      renderBoard(boardWith(1));
+      doubleClick(noteAt(0));
+
+      press(handleOf(noteAt(0)), 105, 105);
+      move(135, 125);
+      release();
+
+      expect(editor()).toBeNull();
+      expect(rectOf(noteAt(0))).toEqual({ x: 10, y: 10, width: 130, height: 120 });
+    });
+
+    it('pressing the edited note outside the editor finishes editing and moves it', () => {
+      renderBoard(boardWith(1));
+      doubleClick(noteAt(0));
+
+      press(noteAt(0), 50, 50);
+      move(80, 90);
+      release();
+
+      expect(editor()).toBeNull();
+      expect(positionOf(noteAt(0))).toEqual({ x: 40, y: 50 });
+    });
+
+    it('a press on the empty board while editing finishes editing and creates nothing', () => {
+      renderBoard(boardWith(1));
+      doubleClick(noteAt(0));
+
+      press(board(), 600, 500);
+      release();
+
+      expect(editor()).toBeNull();
+      expect(notes()).toHaveLength(1);
+
+      press(board(), 600, 500);
+      release();
+
+      expect(notes()).toHaveLength(2);
+    });
+
+    it('a double-click edits the note the last press landed on', () => {
+      renderBoard(boardWith(1));
+
+      press(noteAt(0), 50, 50);
+      release();
+      press(trash(), 950, 700);
+      release();
+      fireEvent.doubleClick(board());
+
+      expect(editor()).toBeNull();
+    });
+
+    it('typing does not refocus the editor', () => {
+      const focus = vi.spyOn(HTMLTextAreaElement.prototype, 'focus');
+      try {
+        renderBoard(boardWith(1));
+        doubleClick(noteAt(0));
+
+        fireEvent.change(editorOrThrow(), { target: { value: 'a' } });
+        fireEvent.change(editorOrThrow(), { target: { value: 'ab' } });
+
+        expect(focus).toHaveBeenCalledTimes(1);
+      } finally {
+        focus.mockRestore();
+      }
+    });
+
+    it('other keys keep the editor open', () => {
+      renderBoard(boardWith(1));
+      doubleClick(noteAt(0));
+      const open = editorOrThrow();
+
+      fireEvent.keyDown(open, { key: 'a' });
+      fireEvent.keyDown(open, { key: 'Enter' });
+
+      expect(editor()).not.toBeNull();
+      expect(document.activeElement).toBe(open);
     });
   });
 });
