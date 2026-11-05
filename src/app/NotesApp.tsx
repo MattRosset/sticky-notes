@@ -4,6 +4,7 @@ import { boardReducer, initialBoardState, type BoardState } from '../domain/boar
 import type { NoteId } from '../domain/ids.ts';
 import type { NotesRepository } from '../persistence/notesRepository.ts';
 import { createSaveScheduler } from './saveScheduler.ts';
+import { exposeNotes } from './testSeam.ts';
 
 /**
  * How long the board must stay unchanged before it is saved. A drag or a burst of typing changes
@@ -89,6 +90,13 @@ function PersistedBoard({ initial, repository, createNoteId }: PersistedBoardPro
       scheduler.flush();
     };
   }, [scheduler]);
+
+  useEffect(() => {
+    // End-to-end tests read the notes here instead of parsing the DOM. `import.meta.env.DEV` is
+    // `false` in a production build, so the build drops this and the seam (scripts/check-bundle.ts
+    // checks it).
+    if (import.meta.env.DEV) return exposeNotes(state.notes);
+  }, [state.notes]);
 
   return <Board notes={state.notes} dispatch={dispatch} createNoteId={createNoteId} />;
 }

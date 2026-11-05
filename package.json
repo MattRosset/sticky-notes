@@ -12,7 +12,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
-    "verify": "pnpm lint && pnpm test && pnpm build",
+    "verify": "pnpm lint && pnpm test && pnpm build && pnpm check:bundle",
+    "check:bundle": "node scripts/check-bundle.ts",
     "preview": "vite preview"
   },
   "dependencies": {
