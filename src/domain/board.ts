@@ -21,7 +21,9 @@ export type BoardAction =
    * screen.
    */
   | { readonly type: 'note/resized'; readonly id: NoteId; readonly size: Size }
-  | { readonly type: 'note/deleted'; readonly id: NoteId };
+  | { readonly type: 'note/deleted'; readonly id: NoteId }
+  /** `text` is the note's whole new text. */
+  | { readonly type: 'note/textChanged'; readonly id: NoteId; readonly text: string };
 
 /**
  * Every update keeps the identity of the notes it doesn't change, so memoized note components
@@ -71,6 +73,16 @@ export function boardReducer(state: BoardState, action: BoardAction): BoardState
       const target = state.notes.find((note) => note.id === action.id);
       if (target === undefined) return state;
       return { notes: state.notes.filter((note) => note !== target), nextZ: state.nextZ };
+    }
+    case 'note/textChanged': {
+      const target = state.notes.find((note) => note.id === action.id);
+      if (target === undefined) return state;
+      // Unchanged text returns the same state, so nothing re-renders and nothing is saved.
+      if (target.text === action.text) return state;
+      return {
+        notes: state.notes.map((note) => (note === target ? { ...note, text: action.text } : note)),
+        nextZ: state.nextZ,
+      };
     }
     default:
       return assertNever(action);

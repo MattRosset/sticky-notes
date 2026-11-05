@@ -142,4 +142,32 @@ describe('boardReducer', () => {
 
     expect(boardReducer(prev, { type: 'note/deleted', id: asNoteId('missing') })).toBe(prev);
   });
+
+  it("changes a note's text, keeping its rect, z and every other note by identity", () => {
+    const first = asNoteId('a');
+    const prev = withNotes(first, asNoteId('b'));
+
+    const next = boardReducer(prev, { type: 'note/textChanged', id: first, text: 'Buy milk' });
+
+    expect(next.notes[0]?.text).toBe('Buy milk');
+    expect(next.notes[0]?.rect).toBe(prev.notes[0]?.rect);
+    expect(next.notes[0]?.z).toBe(prev.notes[0]?.z);
+    expect(next.notes[1]).toBe(prev.notes[1]);
+    expect(next.nextZ).toBe(prev.nextZ);
+  });
+
+  it('returns the same state for unchanged text', () => {
+    const id = asNoteId('a');
+    const prev = withNotes(id);
+
+    expect(boardReducer(prev, { type: 'note/textChanged', id, text: '' })).toBe(prev);
+  });
+
+  it('changing the text of an unknown id returns the same state', () => {
+    const prev = withNotes(asNoteId('a'));
+
+    expect(
+      boardReducer(prev, { type: 'note/textChanged', id: asNoteId('missing'), text: 'x' }),
+    ).toBe(prev);
+  });
 });
