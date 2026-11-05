@@ -335,16 +335,24 @@ describe('NotesApp', () => {
     expect(noteAt(0).style.transform).toBe('translate(300px, 200px)');
   });
 
-  it('a load that settles after unmounting shows nothing', async () => {
-    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const pending = pendingLoad();
-    const { unmount } = renderApp(fakeRepository(pending.load).repository);
+  it("a load from a replaced repository never shows its board", async () => {
+    const stale = pendingLoad();
+    const fresh = pendingLoad();
+    const createNoteId = idSequence();
+    const { rerender } = render(
+      <NotesApp repository={fakeRepository(stale.load).repository} createNoteId={createNoteId} />,
+    );
+    rerender(
+      <NotesApp repository={fakeRepository(fresh.load).repository} createNoteId={createNoteId} />,
+    );
 
-    unmount();
-    pending.resolve(savedBoard);
+    // The replaced repository's load settles first: the app keeps waiting for the current one.
+    stale.resolve(savedBoard);
     await settle();
-
     expect(screen.queryByRole('main')).toBeNull();
-    expect(error).not.toHaveBeenCalled();
+
+    fresh.resolve(null);
+    await settle();
+    expect(notes()).toHaveLength(0);
   });
 });
