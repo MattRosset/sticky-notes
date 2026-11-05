@@ -1,0 +1,9 @@
+.board {
+  /* Fixed positioning also makes the board the containing block of the absolute notes. */
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #f3f2ef;
+  /* No text selection while dragging; the text editor re-enables it inside itself. */
+  user-select: none;
+}

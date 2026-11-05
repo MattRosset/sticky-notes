@@ -1,0 +1,16 @@
+.note {
+  /* The inline transform does the placement; top/left stay at the board's origin. */
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: #fff59d;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.18);
+  border-radius: 2px;
+  /* Stops the browser turning a touch drag into a scroll, which would fire pointercancel. */
+  touch-action: none;
+  cursor: grab;
+}
+
+.note:active {
+  cursor: grabbing;
+}
