@@ -21,3 +21,8 @@ export function clampPosition(position: Point, size: Size, bounds: Size): Point 
     y: Math.min(Math.max(position.y, 0), Math.max(bounds.height - size.height, 0)),
   };
 }
+
+/** Where a note dragged by `delta` from its rect at press time lands, kept fully inside `bounds`. */
+export function movedPosition(start: Rect, delta: Point, bounds: Size): Point {
+  return clampPosition({ x: start.x + delta.x, y: start.y + delta.y }, start, bounds);
+}

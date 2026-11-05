@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampPosition, type Size } from './geometry.ts';
+import { clampPosition, movedPosition, type Rect, type Size } from './geometry.ts';
 
 const bounds: Size = { width: 1024, height: 768 };
 const size: Size = { width: 200, height: 150 };
@@ -21,5 +21,17 @@ describe('clampPosition', () => {
       x: 0,
       y: 0,
     });
+  });
+});
+
+describe('movedPosition', () => {
+  const start: Rect = { x: 100, y: 50, width: 200, height: 150 };
+
+  it('adds the delta to the start position', () => {
+    expect(movedPosition(start, { x: 30, y: -20 }, bounds)).toEqual({ x: 130, y: 30 });
+  });
+
+  it('clamps the result inside the bounds', () => {
+    expect(movedPosition(start, { x: 2000, y: -500 }, bounds)).toEqual({ x: 824, y: 0 });
   });
 });
