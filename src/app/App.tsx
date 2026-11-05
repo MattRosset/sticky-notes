@@ -1,5 +1,9 @@
-import styles from './App.module.css';
+import { useReducer } from 'react';
+import { Board } from '../components/Board.tsx';
+import { boardReducer } from '../domain/board.ts';
+import { createSeedState } from './seedNotes.ts';
 
 export function App() {
-  return <main className={styles.board} aria-label="Sticky notes board" />;
+  const [state, dispatch] = useReducer(boardReducer, undefined, createSeedState);
+  return <Board notes={state.notes} dispatch={dispatch} />;
 }

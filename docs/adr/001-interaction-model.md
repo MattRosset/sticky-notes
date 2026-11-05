@@ -62,6 +62,7 @@ create-by-drag would still need pointer events, so the app would have two input 
 - DOM order is creation order, not visual order, so Tab order and screen readers follow creation
   order. Accepted for this scope.
 - `z` only grows. It stays far below the CSS `z-index` limit (2³¹ − 1) for any realistic session.
-- The reducer must keep untouched notes by identity; `src/domain/board.test.ts` checks it. The
-  next change adds a test that moving one note re-renders exactly one note whether the board has
-  1 or 50 notes, with a control (a non-memoized note component) that must fail it.
+- The reducer must keep untouched notes by identity; `src/domain/board.test.ts` checks it.
+  `src/components/Board.test.tsx` measures renders with a `<Profiler>` inside the note component
+  and checks that moving one note re-renders exactly that note whether the board has 1 or 50
+  notes; a non-memoized note, an unstable `dispatch` or an unstable `getBounds` makes it fail.
