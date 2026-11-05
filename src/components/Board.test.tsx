@@ -165,6 +165,10 @@ function preview(): HTMLElement | null {
   return screen.queryByTestId('creation-preview');
 }
 
+function hint(): HTMLElement | null {
+  return screen.queryByText('Click anywhere to add a note, or drag to draw one.');
+}
+
 function previewRect(): Rect {
   const element = preview();
   if (element === null) throw new Error('no creation preview');
@@ -1048,6 +1052,54 @@ describe('Board', () => {
         add.mockRestore();
         remove.mockRestore();
       }
+    });
+  });
+
+  describe('empty board', () => {
+    it('an empty board says how to add a note', () => {
+      renderBoard(initialBoardState);
+
+      expect(hint()).not.toBeNull();
+      expect(notes()).toHaveLength(0);
+    });
+
+    it('a board with notes shows no hint', () => {
+      renderBoard(boardWith(1));
+
+      expect(hint()).toBeNull();
+    });
+
+    it('creating the first note removes the hint', () => {
+      renderBoard(initialBoardState);
+
+      press(board(), 300, 200);
+      release();
+
+      expect(hint()).toBeNull();
+      expect(notes()).toHaveLength(1);
+    });
+
+    it('the hint hides while a note is drawn and returns if it is abandoned', () => {
+      renderBoard(initialBoardState);
+
+      press(board(), 300, 200);
+      // Still a click: nothing is drawn yet.
+      expect(hint()).not.toBeNull();
+      move(500, 400);
+      expect(hint()).toBeNull();
+      pressKey('Escape');
+
+      expect(hint()).not.toBeNull();
+    });
+
+    it('deleting the last note brings the hint back', () => {
+      renderBoard(boardWith(1));
+
+      press(noteAt(0), 100, 100);
+      move(950, 700);
+      release();
+
+      expect(hint()).not.toBeNull();
     });
   });
 });

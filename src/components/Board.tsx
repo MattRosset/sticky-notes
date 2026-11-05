@@ -25,6 +25,12 @@ export function Board({ notes, dispatch, createNoteId }: BoardProps) {
       data-gesture={view.kind}
       {...handlers}
     >
+      {notes.length === 0 && preview === null && (
+        <div className={styles.hint}>
+          <p className={styles.hintTitle}>Click anywhere to add a note, or drag to draw one.</p>
+          <p>Drag a note onto the trash to delete it. Press Escape to cancel.</p>
+        </div>
+      )}
       <div className={styles.notes}>
         {notes.map((note) => (
           <NoteView key={note.id} note={note} />

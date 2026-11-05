@@ -10,6 +10,29 @@
   cursor: crosshair;
 }
 
+.hint {
+  /* Centered on the empty board; presses go through to the board, which creates the note. */
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  color: rgb(0 0 0 / 0.5);
+  pointer-events: none;
+}
+
+.hint p {
+  margin: 0;
+}
+
+.hintTitle {
+  font-size: 20px;
+  font-weight: 600;
+  color: rgb(0 0 0 / 0.65);
+}
+
 .notes {
   /*
    * A stacking context of its own: a note's z-index only grows, and inside this layer it competes
