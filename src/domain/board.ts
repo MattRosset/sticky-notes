@@ -1,5 +1,5 @@
 import { assertNever } from './assert.ts';
-import type { Point, Rect } from './geometry.ts';
+import type { Point, Rect, Size } from './geometry.ts';
 import type { NoteId } from './ids.ts';
 import type { Note } from './note.ts';
 
@@ -15,7 +15,12 @@ export type BoardAction =
   | { readonly type: 'note/created'; readonly id: NoteId; readonly rect: Rect }
   | { readonly type: 'note/broughtToFront'; readonly id: NoteId }
   /** `position` is the note's new top-left in board coordinates; the caller keeps it on screen. */
-  | { readonly type: 'note/moved'; readonly id: NoteId; readonly position: Point };
+  | { readonly type: 'note/moved'; readonly id: NoteId; readonly position: Point }
+  /**
+   * `size` is the note's new width and height; the caller keeps it at least the minimum and on
+   * screen.
+   */
+  | { readonly type: 'note/resized'; readonly id: NoteId; readonly size: Size };
 
 /**
  * Every update keeps the identity of the notes it doesn't change, so memoized note components
@@ -44,6 +49,19 @@ export function boardReducer(state: BoardState, action: BoardAction): BoardState
       return {
         notes: state.notes.map((note) =>
           note === target ? { ...note, rect: { ...note.rect, x, y } } : note,
+        ),
+        nextZ: state.nextZ,
+      };
+    }
+    case 'note/resized': {
+      const target = state.notes.find((note) => note.id === action.id);
+      if (target === undefined) return state;
+      const { width, height } = action.size;
+      // A resize the caller pinned returns the same state, so nothing re-renders.
+      if (target.rect.width === width && target.rect.height === height) return state;
+      return {
+        notes: state.notes.map((note) =>
+          note === target ? { ...note, rect: { ...note.rect, width, height } } : note,
         ),
         nextZ: state.nextZ,
       };

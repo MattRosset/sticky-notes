@@ -89,4 +89,40 @@ describe('boardReducer', () => {
       boardReducer(prev, { type: 'note/moved', id, position: { x: rect.x, y: rect.y } }),
     ).toBe(prev);
   });
+
+  it('resizes a note, keeping its position and every other note by identity', () => {
+    const first = asNoteId('a');
+    const prev = withNotes(first, asNoteId('b'));
+
+    const next = boardReducer(prev, {
+      type: 'note/resized',
+      id: first,
+      size: { width: 300, height: 90 },
+    });
+
+    expect(next.notes[0]?.rect).toEqual({ x: 10, y: 20, width: 300, height: 90 });
+    expect(next.notes[1]).toBe(prev.notes[1]);
+    expect(next.nextZ).toBe(prev.nextZ);
+  });
+
+  it('returns the same state when the size does not change', () => {
+    const id = asNoteId('a');
+    const prev = withNotes(id);
+
+    expect(
+      boardReducer(prev, { type: 'note/resized', id, size: { width: 200, height: 150 } }),
+    ).toBe(prev);
+  });
+
+  it('returns the same state for an unknown id', () => {
+    const prev = withNotes(asNoteId('a'));
+
+    expect(
+      boardReducer(prev, {
+        type: 'note/resized',
+        id: asNoteId('missing'),
+        size: { width: 300, height: 90 },
+      }),
+    ).toBe(prev);
+  });
 });
