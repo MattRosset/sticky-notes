@@ -47,6 +47,7 @@ describe('boardReducer', () => {
 
     boardReducer(prev, { type: 'note/created', id: asNoteId('c'), rect });
     boardReducer(prev, { type: 'note/broughtToFront', id: asNoteId('a') });
+    boardReducer(prev, { type: 'note/moved', id: asNoteId('a'), position: { x: 300, y: 400 } });
 
     expect(prev.notes.length).toBe(2);
   });
@@ -62,5 +63,30 @@ describe('boardReducer', () => {
     expect(next.notes[1]).toBe(prev.notes[1]);
     expect(next.notes[2]).toBe(prev.notes[2]);
     expect(boardReducer(prev, { type: 'note/broughtToFront', id: asNoteId('missing') })).toBe(prev);
+  });
+
+  it('moves a note to the given position and keeps the others by identity', () => {
+    const second = asNoteId('b');
+    const prev = withNotes(asNoteId('a'), second, asNoteId('c'));
+
+    const next = boardReducer(prev, { type: 'note/moved', id: second, position: { x: 300, y: 400 } });
+
+    expect(next.notes[1]?.rect).toEqual({ x: 300, y: 400, width: rect.width, height: rect.height });
+    expect(next.notes[1]?.z).toBe(prev.notes[1]?.z);
+    expect(next.nextZ).toBe(prev.nextZ);
+    expect(next.notes[0]).toBe(prev.notes[0]);
+    expect(next.notes[2]).toBe(prev.notes[2]);
+  });
+
+  it('returns the same state for an unknown id or an unchanged position', () => {
+    const id = asNoteId('a');
+    const prev = withNotes(id);
+
+    expect(
+      boardReducer(prev, { type: 'note/moved', id: asNoteId('missing'), position: { x: 1, y: 2 } }),
+    ).toBe(prev);
+    expect(
+      boardReducer(prev, { type: 'note/moved', id, position: { x: rect.x, y: rect.y } }),
+    ).toBe(prev);
   });
 });
