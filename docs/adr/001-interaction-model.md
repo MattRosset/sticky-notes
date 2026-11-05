@@ -18,16 +18,21 @@ every `pointermove`, so the design has to answer three questions:
 of truth for every note's rectangle, stacking order and text. Components never hold their own
 copy of a position.
 
-**Pointer input goes through one hook in `src/interaction/`**, built on Pointer Events and
-`setPointerCapture`. Capturing the pointer on `pointerdown` keeps `pointermove` and `pointerup`
-flowing to the same element even when the cursor outruns it. The hook's gesture state is a
-discriminated union (its exact members are decided as move, resize and create are built), so
-impossible combinations, such as resizing without a note, don't type-check.
+**The board owns the single active gesture.** One hook in `src/interaction/`, attached to the
+board element and built on Pointer Events, classifies each press (a note, identified by a
+`data-note-id` attribute, or the empty board) and captures the pointer **on the board**, so
+`pointermove` and `pointerup` keep reaching it even when the cursor outruns the note. It keeps the
+gesture as a discriminated union in one ref (its members grow as move, resize and create are
+built), so impossible combinations, such as resizing without a note, don't type-check. Why the
+board: there is one owner, so a press on a note can't also start a board gesture by bubbling; the
+board is never removed, while a note can be deleted mid-gesture (the browser then reports lost
+capture to the document, not to the note); and the owner knows which note is held, which the
+trash highlight and Escape will need.
 
 **During a drag the hook dispatches on every `pointermove`.** Notes are `React.memo` components
-that receive their own `note` object and the stable `dispatch` function, and the reducer keeps
-the identity of every note it doesn't change. Together these mean only the dragged note
-re-renders.
+that receive only their own `note` object (no `dispatch`: pointer input is handled by the board),
+and the reducer keeps the identity of every note it doesn't change. Together these mean only the
+dragged note re-renders.
 
 **"Over the trash" is a geometric test in `src/domain/`.** Pointer capture retargets events to the
 capturing element, so the trash never receives `pointerenter` or `pointerleave` while a note is
@@ -36,11 +41,10 @@ unit-testable without a DOM.
 
 **Stacking order is a `z` field, not array order.** Each note has a `z`, and `BoardState.nextZ` is
 the single owner of the next value. Bringing a note to the front sets its `z` to `nextZ` and bumps
-`nextZ`. Using array order ("last is on top") would make React move the pressed note's DOM node
-during the same `pointerdown` that starts the capture; MDN's Pointer Events guide advises calling
-`setPointerCapture()` after DOM movements, and whether a capture survives such a move was not
-measured. Changing a field only changes the CSS `z-index`, so the DOM node never moves and the
-question never arises.
+`nextZ`. This changes one CSS value (`z-index`) instead of reordering DOM nodes, and DOM order
+(hence Tab order) stays creation order. Reordering would no longer disturb the pointer capture,
+because the capture is on the board, which never moves; the reasons above are the ones that
+remain.
 
 ## Alternatives considered
 
@@ -65,4 +69,7 @@ create-by-drag would still need pointer events, so the app would have two input 
 - The reducer must keep untouched notes by identity; `src/domain/board.test.ts` checks it.
   `src/components/Board.test.tsx` measures renders with a `<Profiler>` inside the note component
   and checks that moving one note re-renders exactly that note whether the board has 1 or 50
-  notes; a non-memoized note, an unstable `dispatch` or an unstable `getBounds` makes it fail.
+  notes, and that pressing one re-renders only that note. Notes receive only their `note`, so an
+  unstable `dispatch` can't reach them. The test's controls are a non-memoized note and notes
+  whose objects change on every render: both re-render every note, so the first fails the count
+  and the second shows the probe sees notes that were not moved.
