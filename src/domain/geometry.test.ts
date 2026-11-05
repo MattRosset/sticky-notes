@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   clampPoint,
   clampPosition,
+  containsPoint,
   movedPosition,
   rectAt,
   rectFromDrag,
@@ -150,5 +151,25 @@ describe('resizedSize', () => {
       width: 924,
       height: 718,
     });
+  });
+});
+
+describe('containsPoint', () => {
+  const box: Rect = { x: 10, y: 20, width: 100, height: 80 };
+
+  it('contains a point inside', () => {
+    expect(containsPoint(box, { x: 50, y: 50 })).toBe(true);
+    expect(containsPoint(box, { x: 109.5, y: 99.5 })).toBe(true);
+  });
+
+  it('includes the left and top edges and excludes the right and bottom ones', () => {
+    expect(containsPoint(box, { x: 10, y: 20 })).toBe(true);
+    expect(containsPoint(box, { x: 110, y: 50 })).toBe(false);
+    expect(containsPoint(box, { x: 50, y: 100 })).toBe(false);
+  });
+
+  it('excludes a point outside', () => {
+    expect(containsPoint(box, { x: 5, y: 50 })).toBe(false);
+    expect(containsPoint(box, { x: 50, y: 200 })).toBe(false);
   });
 });

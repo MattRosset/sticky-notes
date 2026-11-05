@@ -20,7 +20,8 @@ export type BoardAction =
    * `size` is the note's new width and height; the caller keeps it at least the minimum and on
    * screen.
    */
-  | { readonly type: 'note/resized'; readonly id: NoteId; readonly size: Size };
+  | { readonly type: 'note/resized'; readonly id: NoteId; readonly size: Size }
+  | { readonly type: 'note/deleted'; readonly id: NoteId };
 
 /**
  * Every update keeps the identity of the notes it doesn't change, so memoized note components
@@ -65,6 +66,11 @@ export function boardReducer(state: BoardState, action: BoardAction): BoardState
         ),
         nextZ: state.nextZ,
       };
+    }
+    case 'note/deleted': {
+      const target = state.notes.find((note) => note.id === action.id);
+      if (target === undefined) return state;
+      return { notes: state.notes.filter((note) => note !== target), nextZ: state.nextZ };
     }
     default:
       return assertNever(action);

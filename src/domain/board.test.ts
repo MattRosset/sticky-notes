@@ -125,4 +125,21 @@ describe('boardReducer', () => {
       }),
     ).toBe(prev);
   });
+
+  it('deletes a note, keeping every other note by identity', () => {
+    const prev = withNotes(asNoteId('a'), asNoteId('b'), asNoteId('c'));
+
+    const next = boardReducer(prev, { type: 'note/deleted', id: asNoteId('b') });
+
+    expect(next.notes).toHaveLength(2);
+    expect(next.notes[0]).toBe(prev.notes[0]);
+    expect(next.notes[1]).toBe(prev.notes[2]);
+    expect(next.nextZ).toBe(prev.nextZ);
+  });
+
+  it('deleting an unknown id returns the same state', () => {
+    const prev = withNotes(asNoteId('a'));
+
+    expect(boardReducer(prev, { type: 'note/deleted', id: asNoteId('missing') })).toBe(prev);
+  });
 });

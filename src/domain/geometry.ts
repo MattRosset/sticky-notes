@@ -75,3 +75,17 @@ export function resizedSize(start: Rect, delta: Point, minSize: Size, bounds: Si
     height: Math.max(minSize.height, Math.min(start.height + delta.y, bounds.height - start.y)),
   };
 }
+
+/**
+ * Whether `point` lies inside `rect`, both in the same coordinates. The left and top edges are
+ * inside and the right and bottom edges outside, as in DOM hit testing, so a point on an edge
+ * two rects share belongs to only one of them.
+ */
+export function containsPoint(rect: Rect, point: Point): boolean {
+  return (
+    point.x >= rect.x &&
+    point.x < rect.x + rect.width &&
+    point.y >= rect.y &&
+    point.y < rect.y + rect.height
+  );
+}
