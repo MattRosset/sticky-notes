@@ -20,10 +20,11 @@ copy of a position.
 
 **The board owns the single active gesture.** One hook in `src/interaction/`, attached to the
 board element and built on Pointer Events, classifies each press (a note, identified by a
-`data-note-id` attribute, or the empty board) and captures the pointer **on the board**, so
-`pointermove` and `pointerup` keep reaching it even when the cursor outruns the note. It keeps the
-gesture as a discriminated union in one ref (its members grow as move, resize and create are
-built), so impossible combinations, such as resizing without a note, don't type-check. Why the
+`data-note-id` attribute; a note's resize handle, a `data-resize-handle` child of the note, found
+with `closest`; or the empty board) and captures the pointer **on the board**, so `pointermove`
+and `pointerup` keep reaching it even when the cursor outruns the note. It keeps the gesture as a
+discriminated union in one ref (moving, resizing and creating), so impossible combinations, such
+as resizing without a note, don't type-check. Why the
 board: there is one owner, so a press on a note can't also start a board gesture by bubbling; the
 board is never removed, while a note can be deleted mid-gesture (the browser then reports lost
 capture to the document, not to the note); and the owner knows which note is held, which the
@@ -33,6 +34,17 @@ trash highlight and Escape will need.
 that receive only their own `note` object (no `dispatch`: pointer input is handled by the board),
 and the reducer keeps the identity of every note it doesn't change. Together these mean only the
 dragged note re-renders.
+
+**Creating and resizing.** A press on the empty board is a click until the pointer moves more
+than 4 px on either axis from the press point (the drag rectangle Windows uses to tell a click
+from a drag), then a drag for the rest of the gesture, even if the pointer comes back. A click
+creates a 200×150 note at the press point; a drag creates the dragged rectangle, grown to at least
+80×60 from the press point and kept inside the board. The preview of that rectangle is the one
+piece of gesture state kept in React state, because it is drawn, and release creates exactly the
+previewed rect. Pointerup completes a gesture; pointercancel, or a lost capture of the board,
+aborts it (a child's lost capture is ignored), and an aborted create leaves no note. Resizing uses
+one handle, at the bottom-right corner, because it is the conventional affordance and keeps a
+resize a size-only change: the top-left stays where it is.
 
 **"Over the trash" is a geometric test in `src/domain/`.** Pointer capture retargets events to the
 capturing element, so the trash never receives `pointerenter` or `pointerleave` while a note is
@@ -72,4 +84,6 @@ create-by-drag would still need pointer events, so the app would have two input 
   notes, and that pressing one re-renders only that note. Notes receive only their `note`, so an
   unstable `dispatch` can't reach them. The test's controls are a non-memoized note and notes
   whose objects change on every render: both re-render every note, so the first fails the count
-  and the second shows the probe sees notes that were not moved.
+  and the second shows the probe sees notes that were not moved. The same test checks that dragging
+  out a new note re-renders no note and its release renders only the new one, and that resizing
+  re-renders only the resized note.
