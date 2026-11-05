@@ -1,4 +1,12 @@
-import { useRef, useState, type Dispatch, type PointerEvent, type RefObject } from 'react';
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type Dispatch,
+  type PointerEvent,
+  type RefObject,
+} from 'react';
 import type { BoardAction } from '../domain/board.ts';
 import {
   containsPoint,
@@ -62,9 +70,9 @@ type ActiveGesture = Exclude<Gesture, { readonly kind: 'idle' }>;
 /**
  * How a gesture ends. pointerup completes it. pointercancel or a lost capture aborts it: the
  * system took the pointer away, so what already happened stays, but nothing is deleted or
- * created.
+ * created. Escape reverts it: the user changed their mind, so the note goes back.
  */
-type Outcome = 'completed' | 'aborted';
+type Outcome = 'completed' | 'aborted' | 'reverted';
 
 /** What the board draws for the gesture in progress. Changes only when the drawing does. */
 export type GestureView =
@@ -152,7 +160,7 @@ function rectOnBoard(element: Element | null, boardOrigin: Point): Rect | null {
  * Owns the single pointer gesture of the whole board: classifies each primary-button press as a
  * note, a note's resize handle, the trash (ignored) or the empty board, and turns
  * press-drag-release into board actions: moving the note, resizing it, or creating a new one. A
- * move released with the pointer over the trash deletes the note.
+ * move released with the pointer over the trash deletes the note. Escape cancels any gesture.
  *
  * The pointer is captured on the board element, not on the pressed note:
  * - one element receives every event of the gesture, the same element whose handlers own it, so
@@ -184,10 +192,23 @@ export function useBoardGesture(
       case 'moving': {
         if (outcome === 'completed' && ended.overTrash) {
           dispatch({ type: 'note/deleted', id: ended.noteId });
+        } else if (outcome === 'reverted') {
+          dispatch({
+            type: 'note/moved',
+            id: ended.noteId,
+            position: { x: ended.startRect.x, y: ended.startRect.y },
+          });
         }
         break;
       }
       case 'resizing': {
+        if (outcome === 'reverted') {
+          dispatch({
+            type: 'note/resized',
+            id: ended.noteId,
+            size: { width: ended.startRect.width, height: ended.startRect.height },
+          });
+        }
         break;
       }
       case 'creating': {
@@ -220,6 +241,24 @@ export function useBoardGesture(
     if (ended.kind === 'idle' || event.pointerId !== ended.pointerId) return;
     settle(ended, outcome);
   };
+
+  // Escape cancels the active gesture. Keys go to the focused element, and pressing the board
+  // leaves focus on the document body, so the key is caught on the window. useEffectEvent lets
+  // one listener, added once, see the latest render.
+  const onEscape = useEffectEvent(() => {
+    const current = gesture.current;
+    if (current.kind === 'idle') return;
+    settle(current, 'reverted');
+  });
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onEscape();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
 
   // Re-created on every render on purpose: they sit on the board, not on a memoized child, and
   // each render's handlers must see the latest `notes` so a second drag starts where the first ended.

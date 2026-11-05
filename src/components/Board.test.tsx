@@ -201,6 +201,11 @@ function release(pointerId = 1): void {
   fireEvent.pointerUp(board(), { pointerId });
 }
 
+// Keys go to the focused element; nothing on the board takes focus, so that is the body.
+function pressKey(key: string): void {
+  fireEvent.keyDown(document.body, { key });
+}
+
 /** Ids of the notes that render while `action` runs. */
 function rendersDuring(action: () => void): string[] {
   const rendered: string[] = [];
@@ -333,6 +338,19 @@ describe('Board', () => {
       expect(rendered).toEqual([]);
       // The note really went, so the empty list can't pass by the release doing nothing.
       expect(notes()).toHaveLength(49);
+    });
+
+    it('Escape re-renders only the reverted note (50 notes)', () => {
+      renderBoard(boardWith(50));
+      press(noteAt(0), 100, 100);
+      move(130, 150);
+
+      const rendered = rendersDuring(() => {
+        pressKey('Escape');
+      });
+
+      expect(rendered).toEqual(['0']);
+      expect(positionOf(noteAt(0))).toEqual({ x: 10, y: 10 });
     });
   });
 
@@ -911,6 +929,125 @@ describe('Board', () => {
       move(150, 150);
 
       expect(trashState()).toBe('armed');
+    });
+  });
+
+  describe('Escape', () => {
+    it('Escape while moving puts the note back and ends the drag', () => {
+      renderBoard(boardWith(1));
+
+      press(noteAt(0), 100, 100);
+      move(130, 150);
+      expect(positionOf(noteAt(0))).toEqual({ x: 40, y: 60 });
+      pressKey('Escape');
+      expect(positionOf(noteAt(0))).toEqual({ x: 10, y: 10 });
+      expect(gestureOf()).toBe('idle');
+      move(200, 200);
+      expect(positionOf(noteAt(0))).toEqual({ x: 10, y: 10 });
+      release();
+
+      expect(notes()).toHaveLength(1);
+    });
+
+    it('Escape over the trash deletes nothing', () => {
+      renderBoard(boardWith(1));
+
+      press(noteAt(0), 100, 100);
+      move(950, 700);
+      expect(trashState()).toBe('armed');
+      pressKey('Escape');
+      expect(trashState()).toBe('rest');
+      expect(positionOf(noteAt(0))).toEqual({ x: 10, y: 10 });
+      release();
+
+      expect(notes()).toHaveLength(1);
+    });
+
+    it('Escape while resizing restores the size', () => {
+      renderBoard(boardWith(1));
+
+      press(handleOf(noteAt(0)), 105, 105);
+      move(135, 125);
+      expect(rectOf(noteAt(0))).toEqual({ x: 10, y: 10, width: 130, height: 120 });
+      pressKey('Escape');
+      expect(rectOf(noteAt(0))).toEqual({ x: 10, y: 10, width: 100, height: 100 });
+      move(200, 200);
+
+      expect(rectOf(noteAt(0))).toEqual({ x: 10, y: 10, width: 100, height: 100 });
+    });
+
+    it('Escape while drawing a note discards it', () => {
+      renderBoard(boardWith(1));
+
+      press(board(), 300, 200);
+      move(500, 400);
+      expect(preview()).not.toBeNull();
+      pressKey('Escape');
+      expect(preview()).toBeNull();
+      expect(gestureOf()).toBe('idle');
+      release();
+
+      expect(notes()).toHaveLength(1);
+    });
+
+    it('Escape during a click on the empty board creates nothing', () => {
+      renderBoard(boardWith(1));
+
+      press(board(), 300, 200);
+      pressKey('Escape');
+      release();
+
+      expect(notes()).toHaveLength(1);
+    });
+
+    it('other keys do not end the gesture', () => {
+      renderBoard(boardWith(1));
+
+      press(noteAt(0), 100, 100);
+      pressKey('Enter');
+      move(130, 150);
+
+      expect(positionOf(noteAt(0))).toEqual({ x: 40, y: 60 });
+    });
+
+    it('a drag after Escape works normally', () => {
+      renderBoard(boardWith(1));
+
+      press(noteAt(0), 100, 100);
+      move(130, 150);
+      pressKey('Escape');
+      release();
+      press(noteAt(0), 100, 100);
+      move(110, 110);
+
+      expect(positionOf(noteAt(0))).toEqual({ x: 20, y: 20 });
+    });
+
+    it('listens for keys once, on the window, until unmounted', () => {
+      const add = vi.spyOn(window, 'addEventListener');
+      const remove = vi.spyOn(window, 'removeEventListener');
+      try {
+        renderBoard(boardWith(1));
+        press(noteAt(0), 100, 100);
+        move(130, 150);
+        move(140, 160);
+        release();
+
+        const added = add.mock.calls
+          .filter((call) => call[0] === 'keydown')
+          .map((call) => call[1]);
+        expect(added).toHaveLength(1);
+
+        cleanup();
+
+        const removed = remove.mock.calls
+          .filter((call) => call[0] === 'keydown')
+          .map((call) => call[1]);
+        expect(removed).toEqual(added);
+      } finally {
+        add.mockRestore();
+        remove.mockRestore();
+      }
     });
   });
 });
