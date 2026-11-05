@@ -21,14 +21,15 @@ copy of a position.
 **The board owns the single active gesture.** One hook in `src/interaction/`, attached to the
 board element and built on Pointer Events, classifies each press (a note, identified by a
 `data-note-id` attribute; a note's resize handle, a `data-resize-handle` child of the note, found
-with `closest`; or the empty board) and captures the pointer **on the board**, so `pointermove`
-and `pointerup` keep reaching it even when the cursor outruns the note. It keeps the gesture as a
-discriminated union in one ref (moving, resizing and creating), so impossible combinations, such
+with `closest`; the trash (a press on it starts nothing); or the empty board) and captures the
+pointer **on the board**, so `pointermove` and `pointerup` keep reaching it even when the cursor
+outruns the note. It keeps the gesture as a discriminated union in one ref (moving, resizing and
+creating), so impossible combinations, such
 as resizing without a note, don't type-check. Why the
 board: there is one owner, so a press on a note can't also start a board gesture by bubbling; the
 board is never removed, while a note can be deleted mid-gesture (the browser then reports lost
 capture to the document, not to the note); and the owner knows which note is held, which the
-trash highlight and Escape will need.
+trash highlight and Escape use.
 
 **During a drag the hook dispatches on every `pointermove`.** Notes are `React.memo` components
 that receive only their own `note` object (no `dispatch`: pointer input is handled by the board),
@@ -39,17 +40,31 @@ dragged note re-renders.
 than 4 px on either axis from the press point (the drag rectangle Windows uses to tell a click
 from a drag), then a drag for the rest of the gesture, even if the pointer comes back. A click
 creates a 200×150 note at the press point; a drag creates the dragged rectangle, grown to at least
-80×60 from the press point and kept inside the board. The preview of that rectangle is the one
-piece of gesture state kept in React state, because it is drawn, and release creates exactly the
-previewed rect. Pointerup completes a gesture; pointercancel, or a lost capture of the board,
-aborts it (a child's lost capture is ignored), and an aborted create leaves no note. Resizing uses
-one handle, at the bottom-right corner, because it is the conventional affordance and keeps a
-resize a size-only change: the top-left stays where it is.
+80×60 from the press point and kept inside the board. Release creates exactly the previewed rect.
+Pointerup completes a gesture; pointercancel, or a lost capture of the board, aborts it (a child's
+lost capture is ignored), and an aborted create leaves no note. Resizing uses one handle, at the
+bottom-right corner, because it is the conventional affordance and keeps a resize a size-only
+change: the top-left stays where it is.
+
+**What the board draws.** The gesture stays in the ref. What the board draws for it (which
+gesture is active, for the cursor; whether the pointer is over the trash; the creation preview) is
+one small React state that changes only when the drawing does, so a move that stays on one side of
+the trash's edge renders nothing extra. During a gesture the board sets the cursor on itself and
+every descendant, because under capture the element under the pointer would otherwise decide.
+Notes live in their own layer (`isolation: isolate`), so their ever-growing `z-index` can't rise
+above the preview or the trash.
 
 **"Over the trash" is a geometric test in `src/domain/`.** Pointer capture retargets events to the
 capturing element, so the trash never receives `pointerenter` or `pointerleave` while a note is
-held. Instead, the pointer position is compared with the trash's rectangle: a pure function that is
-unit-testable without a DOM.
+held. Instead, the trash's rectangle is read from the DOM when a note is pressed and the pointer is
+compared with it in board coordinates by `containsPoint`, a pure function in `src/domain/` that is
+unit-testable without a DOM; the pointer, not the note, must be inside, so a large note can't be
+deleted by grazing the trash.
+
+**Deleting and cancelling.** Releasing while the pointer is over the trash deletes the note,
+without confirmation; pointercancel or a lost capture never deletes. Escape reverts any gesture: a
+moved note returns to where it started, a resized note gets its size back, a drawn note is
+discarded. It is caught on the window, because pressing the board focuses nothing.
 
 **Stacking order is a `z` field, not array order.** Each note has a `z`, and `BoardState.nextZ` is
 the single owner of the next value. Bringing a note to the front sets its `z` to `nextZ` and bumps
@@ -86,4 +101,6 @@ create-by-drag would still need pointer events, so the app would have two input 
   whose objects change on every render: both re-render every note, so the first fails the count
   and the second shows the probe sees notes that were not moved. The same test checks that dragging
   out a new note re-renders no note and its release renders only the new one, and that resizing
-  re-renders only the resized note.
+  re-renders only the resized note. It also checks that the trash highlight re-renders no note,
+  that deleting a note re-renders no other note, and that Escape re-renders only the note it puts
+  back.
