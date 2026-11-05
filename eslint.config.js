@@ -17,7 +17,7 @@ const DOMAIN_DETERMINISM_MESSAGE =
   'domain/ is deterministic. Generate ids/time in app/ and pass them in an action.';
 
 export default defineConfig([
-  globalIgnores(['dist', '**/__lint-fixtures__/**']),
+  globalIgnores(['dist', '**/__lint-fixtures__/**', 'playwright-report', 'test-results']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
