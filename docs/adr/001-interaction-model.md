@@ -54,6 +54,20 @@ every descendant, because under capture the element under the pointer would othe
 Notes live in their own layer (`isolation: isolate`), so their ever-growing `z-index` can't rise
 above the preview or the trash.
 
+**Editing text.** Which note is being edited is UI state in a second hook in `src/interaction/`,
+not part of `BoardState`, so it is never saved. The editor is an uncontrolled `<textarea>`, and its
+`change`, `keydown` and `blur` events are handled on the board, where they bubble, like pointer
+input: a note still receives only its `note` and one boolean, whether it is being edited, so
+typing and opening or closing the editor re-render only that note. A controlled editor would need
+a change callback on every note. Each change dispatches the note's whole new text. A double-click
+edits the note the last press landed on, not the double-click's target: measured in Chrome, with
+the pointer captured on the board, `click` and `dblclick` are targeted at the board, so the target
+can't say which note was clicked. A press in the editor starts no gesture, so the text keeps
+native caret placement and selection; any other press finishes editing first, and on the empty
+board that is all it does, so a click to leave a note doesn't leave a new note behind. A new note
+opens in the editor. Escape in the editor blurs it, and the blur ends editing; the window's Escape
+listener, which cancels gestures, is unchanged.
+
 **"Over the trash" is a geometric test in `src/domain/`.** Pointer capture retargets events to the
 capturing element, so the trash never receives `pointerenter` or `pointerleave` while a note is
 held. Instead, the trash's rectangle is read from the DOM when a note is pressed and the pointer is
