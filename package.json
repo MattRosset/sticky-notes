@@ -10,7 +10,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings 0",
+    "test": "vitest run",
+    "verify": "pnpm lint && pnpm test && pnpm build",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -29,6 +31,7 @@
     "globals": "^17.13.0",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.1",
-    "vite": "^8.3.6"
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
   }
 }
