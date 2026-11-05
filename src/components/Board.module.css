@@ -6,6 +6,18 @@
   background: #f3f2ef;
   /* No text selection while dragging; the text editor re-enables it inside itself. */
   user-select: none;
+  /* A press on the empty board draws a note. */
+  cursor: crosshair;
+}
+
+.notes {
+  /*
+   * A stacking context of its own: a note's z-index only grows, and inside this layer it competes
+   * only with other notes, so the preview and the trash stay above every note.
+   */
+  position: absolute;
+  inset: 0;
+  isolation: isolate;
 }
 
 .preview {
@@ -13,8 +25,30 @@
   position: absolute;
   top: 0;
   left: 0;
+  /* Above the notes layer. */
+  z-index: 1;
   border: 2px dashed rgb(0 0 0 / 0.35);
   border-radius: 2px;
   background: rgb(255 245 157 / 0.5);
   pointer-events: none;
+}
+
+/*
+ * During a gesture the cursor belongs to the gesture, on the board and everything in it: with the
+ * pointer captured on the board, the element under the pointer would otherwise decide, and a
+ * resize can leave its note.
+ */
+.board[data-gesture='moving'],
+.board[data-gesture='moving'] * {
+  cursor: grabbing;
+}
+
+.board[data-gesture='resizing'],
+.board[data-gesture='resizing'] * {
+  cursor: nwse-resize;
+}
+
+.board[data-gesture='creating'],
+.board[data-gesture='creating'] * {
+  cursor: crosshair;
 }

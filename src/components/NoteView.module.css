@@ -11,10 +11,6 @@
   cursor: grab;
 }
 
-.note:active {
-  cursor: grabbing;
-}
-
 .resizeHandle {
   /* Bottom-right grip, inside the note so it never leaves the note's clamped rect. */
   position: absolute;

@@ -1,6 +1,7 @@
-import { useRef, useState, type Dispatch, type PointerEvent } from 'react';
+import { useRef, useState, type Dispatch, type PointerEvent, type RefObject } from 'react';
 import type { BoardAction } from '../domain/board.ts';
 import {
+  containsPoint,
   movedPosition,
   rectAt,
   rectFromDrag,
@@ -24,6 +25,12 @@ type Gesture =
       readonly startRect: Rect;
       /** Board size at press time. */
       readonly bounds: Size;
+      /** The board's top-left in client coordinates, at press time. */
+      readonly boardOrigin: Point;
+      /** The trash's rect in board coordinates at press time, or null if it isn't rendered. */
+      readonly trash: Rect | null;
+      /** Whether the pointer was over the trash at the last move: releasing then deletes. */
+      readonly overTrash: boolean;
     }
   | {
       readonly kind: 'resizing';
@@ -50,6 +57,24 @@ type Gesture =
       readonly draft: Rect | null;
     };
 
+type ActiveGesture = Exclude<Gesture, { readonly kind: 'idle' }>;
+
+/**
+ * How a gesture ends. pointerup completes it. pointercancel or a lost capture aborts it: the
+ * system took the pointer away, so what already happened stays, but nothing is deleted or
+ * created.
+ */
+type Outcome = 'completed' | 'aborted';
+
+/** What the board draws for the gesture in progress. Changes only when the drawing does. */
+export type GestureView =
+  | { readonly kind: 'idle' }
+  | { readonly kind: 'moving'; readonly overTrash: boolean }
+  | { readonly kind: 'resizing' }
+  | { readonly kind: 'creating'; readonly preview: Rect | null };
+
+const IDLE_VIEW: GestureView = { kind: 'idle' };
+
 /** Spread onto the board element. */
 export interface BoardGestureHandlers {
   readonly onPointerDown: (event: PointerEvent<HTMLElement>) => void;
@@ -59,11 +84,12 @@ export interface BoardGestureHandlers {
   readonly onLostPointerCapture: (event: PointerEvent<HTMLElement>) => void;
 }
 
-/** What the board needs from the gesture: handlers to spread, and the preview to draw. */
+/** What the board needs from the gesture: handlers to spread, what to draw, and the trash ref. */
 export interface BoardGesture {
   readonly handlers: BoardGestureHandlers;
-  /** The rect a create-by-drag will produce, while one is in progress. */
-  readonly preview: Rect | null;
+  readonly view: GestureView;
+  /** Attach to the trash: its rect is read at each press, and presses on it start nothing. */
+  readonly trashRef: RefObject<HTMLDivElement | null>;
 }
 
 /**
@@ -89,14 +115,20 @@ export function resizeHandleProps(): { readonly 'data-resize-handle': true } {
 type PressTarget =
   | { readonly kind: 'board' }
   | { readonly kind: 'note'; readonly note: Note }
-  | { readonly kind: 'resizeHandle'; readonly note: Note };
+  | { readonly kind: 'resizeHandle'; readonly note: Note }
+  | { readonly kind: 'trash' };
 
 /**
- * What a press landed on: a note's resize handle, the note itself, or the empty board (also for
- * an id no longer in `notes`).
+ * What a press landed on: the trash (a drop target, not a press target), a note's resize handle,
+ * the note itself, or the empty board (also for an id no longer in `notes`).
  */
-function classifyPress(target: EventTarget, notes: readonly Note[]): PressTarget {
+function classifyPress(
+  target: EventTarget,
+  notes: readonly Note[],
+  trash: Element | null,
+): PressTarget {
   if (!(target instanceof Element)) return { kind: 'board' };
+  if (trash !== null && trash.contains(target)) return { kind: 'trash' };
   const raw = target.closest('[data-note-id]')?.getAttribute('data-note-id');
   const note = notes.find((candidate) => candidate.id === raw);
   if (note === undefined) return { kind: 'board' };
@@ -104,10 +136,23 @@ function classifyPress(target: EventTarget, notes: readonly Note[]): PressTarget
   return { kind: 'note', note };
 }
 
+/** `element`'s rect in board coordinates, or null when it isn't rendered. */
+function rectOnBoard(element: Element | null, boardOrigin: Point): Rect | null {
+  if (element === null) return null;
+  const box = element.getBoundingClientRect();
+  return {
+    x: box.left - boardOrigin.x,
+    y: box.top - boardOrigin.y,
+    width: box.width,
+    height: box.height,
+  };
+}
+
 /**
  * Owns the single pointer gesture of the whole board: classifies each primary-button press as a
- * note, a note's resize handle or the empty board, and turns press-drag-release into board
- * actions: moving the note, resizing it, or creating a new one.
+ * note, a note's resize handle, the trash (ignored) or the empty board, and turns
+ * press-drag-release into board actions: moving the note, resizing it, or creating a new one. A
+ * move released with the pointer over the trash deletes the note.
  *
  * The pointer is captured on the board element, not on the pressed note:
  * - one element receives every event of the gesture, the same element whose handlers own it, so
@@ -118,7 +163,8 @@ function classifyPress(target: EventTarget, notes: readonly Note[]): PressTarget
  *   could never learn that its capture ended. The board is never removed.
  *
  * The gesture lives in a ref, so pressing and moving don't render by themselves; only what the
- * hook dispatches does, except the creation preview, which is state because it is drawn.
+ * hook dispatches does, except what the board draws for it (`GestureView`), which is state
+ * because it is drawn.
  */
 export function useBoardGesture(
   notes: readonly Note[],
@@ -126,8 +172,36 @@ export function useBoardGesture(
   createNoteId: () => NoteId,
 ): BoardGesture {
   const gesture = useRef<Gesture>({ kind: 'idle' });
+  const trashRef = useRef<HTMLDivElement>(null);
   // The only gesture state that renders, because it is drawn; everything else stays in the ref.
-  const [preview, setPreview] = useState<Rect | null>(null);
+  const [view, setView] = useState<GestureView>(IDLE_VIEW);
+
+  /** The only place a gesture's effect is decided; every way of ending a gesture comes here. */
+  const settle = (ended: ActiveGesture, outcome: Outcome): void => {
+    gesture.current = { kind: 'idle' };
+    setView(IDLE_VIEW);
+    switch (ended.kind) {
+      case 'moving': {
+        if (outcome === 'completed' && ended.overTrash) {
+          dispatch({ type: 'note/deleted', id: ended.noteId });
+        }
+        break;
+      }
+      case 'resizing': {
+        break;
+      }
+      case 'creating': {
+        if (outcome === 'completed') {
+          dispatch({
+            type: 'note/created',
+            id: createNoteId(),
+            rect: ended.draft ?? rectAt(ended.anchor, DEFAULT_NOTE_SIZE, ended.bounds),
+          });
+        }
+        break;
+      }
+    }
+  };
 
   /**
    * The only way a gesture ends, shared by pointerup, pointercancel and lostpointercapture:
@@ -136,8 +210,7 @@ export function useBoardGesture(
    *   end never happens twice;
    * - pointerup is the normal completion; pointercancel or lostpointercapture without a preceding
    *   pointerup is an abort;
-   * - the outcome decides whether a create happens: pointerup completes, pointercancel and
-   *   lostpointercapture abort, and an aborted create leaves no note.
+   * - the outcome decides what the gesture leaves behind (see `Outcome`).
    */
   const endGesture = (
     event: PointerEvent<HTMLElement>,
@@ -145,17 +218,7 @@ export function useBoardGesture(
   ): void => {
     const ended = gesture.current;
     if (ended.kind === 'idle' || event.pointerId !== ended.pointerId) return;
-    gesture.current = { kind: 'idle' };
-    if (ended.kind === 'creating') {
-      setPreview(null);
-      if (outcome === 'completed') {
-        dispatch({
-          type: 'note/created',
-          id: createNoteId(),
-          rect: ended.draft ?? rectAt(ended.anchor, DEFAULT_NOTE_SIZE, ended.bounds),
-        });
-      }
-    }
+    settle(ended, outcome);
   };
 
   // Re-created on every render on purpose: they sit on the board, not on a memoized child, and
@@ -165,7 +228,10 @@ export function useBoardGesture(
       // One gesture at a time: a second pointer (another finger, a pen) is ignored while one is
       // active.
       if (event.button !== 0 || gesture.current.kind !== 'idle') return;
-      const pressed = classifyPress(event.target, notes);
+      const pressed = classifyPress(event.target, notes, trashRef.current);
+      // The trash is where notes are dropped, not something to press: a press on it starts no
+      // gesture, so a click on the trash doesn't create a note under it.
+      if (pressed.kind === 'trash') return;
       const board = event.currentTarget;
       // Capture before writing the gesture: if setPointerCapture throws (NotFoundError for an
       // inactive pointer), the gesture stays idle instead of stuck. Every press captures, the
@@ -174,15 +240,15 @@ export function useBoardGesture(
       const pointerId = event.pointerId;
       // Client coordinates equal board coordinates only because the board is
       // `position: fixed; inset: 0` (see Board.module.css). Moving only uses deltas, which are
-      // the same in both systems. Creating needs absolute board positions, so it converts here,
-      // by subtracting `boardOrigin` (the board's getBoundingClientRect() left/top), not in the
-      // components or the domain.
+      // the same in both systems. Creating and the trash test need absolute board positions, so
+      // they convert here, by subtracting `boardOrigin` (the board's getBoundingClientRect()
+      // left/top), not in the components or the domain.
       const origin = { x: event.clientX, y: event.clientY };
       const bounds = { width: board.clientWidth, height: board.clientHeight };
+      const box = board.getBoundingClientRect();
+      const boardOrigin = { x: box.left, y: box.top };
       switch (pressed.kind) {
         case 'board': {
-          const box = board.getBoundingClientRect();
-          const boardOrigin = { x: box.left, y: box.top };
           gesture.current = {
             kind: 'creating',
             pointerId,
@@ -192,6 +258,7 @@ export function useBoardGesture(
             bounds,
             draft: null,
           };
+          setView({ kind: 'creating', preview: null });
           break;
         }
         case 'note': {
@@ -203,7 +270,11 @@ export function useBoardGesture(
             noteId: note.id,
             startRect: note.rect,
             bounds,
+            boardOrigin,
+            trash: rectOnBoard(trashRef.current, boardOrigin),
+            overTrash: false,
           };
+          setView({ kind: 'moving', overTrash: false });
           dispatch({ type: 'note/broughtToFront', id: note.id });
           break;
         }
@@ -217,6 +288,7 @@ export function useBoardGesture(
             startRect: note.rect,
             bounds,
           };
+          setView({ kind: 'resizing' });
           // Any interaction with a note raises it, the handle as much as the body.
           dispatch({ type: 'note/broughtToFront', id: note.id });
           break;
@@ -234,6 +306,19 @@ export function useBoardGesture(
             id: current.noteId,
             position: movedPosition(current.startRect, delta, current.bounds),
           });
+          // The pointer, not the note, must be over the trash, so a large note can't be deleted
+          // by grazing it.
+          const pointer = {
+            x: event.clientX - current.boardOrigin.x,
+            y: event.clientY - current.boardOrigin.y,
+          };
+          const overTrash = current.trash !== null && containsPoint(current.trash, pointer);
+          // Only a change re-renders the board: most moves stay on the same side of the trash's
+          // edge.
+          if (overTrash !== current.overTrash) {
+            gesture.current = { ...current, overTrash };
+            setView({ kind: 'moving', overTrash });
+          }
           break;
         }
         case 'resizing': {
@@ -260,7 +345,7 @@ export function useBoardGesture(
             current.bounds,
           );
           gesture.current = { ...current, draft };
-          setPreview(draft);
+          setView({ kind: 'creating', preview: draft });
           break;
         }
       }
@@ -280,5 +365,5 @@ export function useBoardGesture(
     },
   };
 
-  return { handlers, preview };
+  return { handlers, view, trashRef };
 }

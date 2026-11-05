@@ -1,0 +1,41 @@
+.trash {
+  /* Always visible, so it can be found before a note is dragged; above the notes layer. */
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border: 2px dashed rgb(0 0 0 / 0.3);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 0.7);
+  color: rgb(0 0 0 / 0.6);
+  opacity: 0.5;
+  cursor: default;
+  transition:
+    opacity 120ms ease-out,
+    background-color 120ms ease-out,
+    border-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.trash[data-state='active'] {
+  opacity: 1;
+}
+
+.trash[data-state='armed'] {
+  /* No scale: the drawn rect must stay the rect the board hit-tests. */
+  opacity: 1;
+  border-style: solid;
+  border-color: #b71c1c;
+  background: #e53935;
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trash {
+    transition: none;
+  }
+}
