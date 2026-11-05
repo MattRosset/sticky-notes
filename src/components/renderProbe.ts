@@ -12,8 +12,14 @@ export const onNoteRender: ProfilerOnRenderCallback = (...args) => {
   listener?.(...args);
 };
 
-/** Test seam: observe which notes render. Returns an unsubscribe function. */
+/**
+ * Test seam: observe which notes render. Returns an unsubscribe function.
+ *
+ * Throws if a listener is already subscribed: replacing it silently would let a subscription
+ * leaked by one test hide the counts of the next.
+ */
 export function subscribeNoteRenders(next: ProfilerOnRenderCallback): () => void {
+  if (listener !== null) throw new Error('A note render listener is already subscribed');
   listener = next;
   return () => {
     if (listener === next) listener = null;
