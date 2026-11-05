@@ -7,3 +7,14 @@
   /* No text selection while dragging; the text editor re-enables it inside itself. */
   user-select: none;
 }
+
+.preview {
+  /* Shows the note a drag on the empty board will create; never a press target. */
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 2px dashed rgb(0 0 0 / 0.35);
+  border-radius: 2px;
+  background: rgb(255 245 157 / 0.5);
+  pointer-events: none;
+}

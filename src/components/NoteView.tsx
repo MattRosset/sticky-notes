@@ -2,6 +2,7 @@ import { memo, Profiler } from 'react';
 import type { Note } from '../domain/note.ts';
 import { noteTargetProps } from '../interaction/useBoardGesture.ts';
 import styles from './NoteView.module.css';
+import { rectStyle } from './rectStyle.ts';
 import { onNoteRender } from './renderProbe.ts';
 
 interface NoteViewProps {
@@ -9,19 +10,13 @@ interface NoteViewProps {
 }
 
 function NoteViewImpl({ note }: NoteViewProps) {
-  const { x, y, width, height } = note.rect;
   return (
     <Profiler id={note.id} onRender={onNoteRender}>
       <article
         className={styles.note}
         aria-label="Sticky note"
         {...noteTargetProps(note.id)}
-        style={{
-          transform: `translate(${String(x)}px, ${String(y)}px)`,
-          width,
-          height,
-          zIndex: note.z,
-        }}
+        style={{ ...rectStyle(note.rect), zIndex: note.z }}
       />
     </Profiler>
   );

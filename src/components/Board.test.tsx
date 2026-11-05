@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { useReducer } from 'react';
+import { useReducer, useState } from 'react';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { boardReducer, initialBoardState, type BoardState } from '../domain/board.ts';
-import type { Point } from '../domain/geometry.ts';
-import { asNoteId } from '../domain/ids.ts';
+import type { Point, Rect, Size } from '../domain/geometry.ts';
+import { asNoteId, type NoteId } from '../domain/ids.ts';
 import { Board } from './Board.tsx';
 import { subscribeNoteRenders } from './renderProbe.ts';
 
-// jsdom has no pointer capture; the board calls it on every press on a note.
+// jsdom has no pointer capture; the board calls it on every primary-button press.
 const setPointerCapture = vi.fn();
 
 beforeAll(() => {
@@ -16,9 +16,6 @@ beforeAll(() => {
     configurable: true,
     value: setPointerCapture,
   });
-  // jsdom does no layout, and the clamp needs a board size.
-  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1024);
-  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(768);
 });
 
 afterAll(() => {
@@ -41,10 +38,21 @@ interface HarnessProps {
   readonly variant?: 'stable' | 'inlineDispatch' | 'clonedNotes';
 }
 
+/** Ids 'new-1', 'new-2', … in creation order, so tests know which id a created note gets. */
+function idSequence(): () => NoteId {
+  let count = 0;
+  return () => {
+    count += 1;
+    return asNoteId(`new-${String(count)}`);
+  };
+}
+
 function Harness({ initial, variant = 'stable' }: HarnessProps) {
   const [state, dispatch] = useReducer(boardReducer, initial);
+  const [createNoteId] = useState(() => idSequence());
   return (
     <Board
+      createNoteId={createNoteId}
       notes={variant === 'clonedNotes' ? state.notes.map((note) => ({ ...note })) : state.notes}
       dispatch={
         variant === 'inlineDispatch'
@@ -55,6 +63,33 @@ function Harness({ initial, variant = 'stable' }: HarnessProps) {
       }
     />
   );
+}
+
+interface RenderOptions {
+  readonly variant?: HarnessProps['variant'];
+  /** Board size; jsdom does no layout, so the board reports this and every other element 0. */
+  readonly size?: Size;
+  /** Board's top-left in client coordinates. */
+  readonly offset?: Point;
+}
+
+/** Renders the board and gives only the board element a size and a client position. */
+function renderBoard(
+  initial: BoardState,
+  {
+    variant,
+    size = { width: 1024, height: 768 },
+    offset = { x: 0, y: 0 },
+  }: RenderOptions = {},
+): void {
+  render(<Harness initial={initial} variant={variant} />);
+  const element = board();
+  Object.defineProperty(element, 'clientWidth', { configurable: true, value: size.width });
+  Object.defineProperty(element, 'clientHeight', { configurable: true, value: size.height });
+  Object.defineProperty(element, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => new DOMRect(offset.x, offset.y, size.width, size.height),
+  });
 }
 
 /** A board with notes '0'…'count-1', all at the same rect. */
@@ -86,6 +121,34 @@ function positionOf(note: HTMLElement): Point {
   const match = /^translate\((-?[\d.]+)px, (-?[\d.]+)px\)$/.exec(transform);
   if (match === null) throw new Error(`unexpected transform: "${transform}"`);
   return { x: Number(match[1]), y: Number(match[2]) };
+}
+
+function pixels(value: string): number {
+  const match = /^(-?[\d.]+)px$/.exec(value);
+  if (match === null) throw new Error(`unexpected length: "${value}"`);
+  return Number(match[1]);
+}
+
+function rectOf(element: HTMLElement): Rect {
+  return {
+    ...positionOf(element),
+    width: pixels(element.style.width),
+    height: pixels(element.style.height),
+  };
+}
+
+function preview(): HTMLElement | null {
+  return screen.queryByTestId('creation-preview');
+}
+
+function previewRect(): Rect {
+  const element = preview();
+  if (element === null) throw new Error('no creation preview');
+  return rectOf(element);
+}
+
+function notes(): HTMLElement[] {
+  return screen.getAllByRole('article');
 }
 
 /** Presses fire on the pressed element: a note, or the board itself for the empty board. */
@@ -125,7 +188,7 @@ function rendersDuring(action: () => void): string[] {
 describe('Board', () => {
   describe('render gate', () => {
     it.each([1, 50])('moving one note re-renders only that note (%i notes)', (count) => {
-      render(<Harness initial={boardWith(count)} />);
+      renderBoard(boardWith(count));
       press(noteAt(0), 100, 100);
 
       const rendered = rendersDuring(() => {
@@ -138,7 +201,7 @@ describe('Board', () => {
     });
 
     it('pressing a note re-renders only that note (50 notes)', () => {
-      render(<Harness initial={boardWith(50)} />);
+      renderBoard(boardWith(50));
 
       const rendered = rendersDuring(() => {
         press(noteAt(0), 100, 100);
@@ -149,7 +212,7 @@ describe('Board', () => {
     });
 
     it('an unstable dispatch does not reach the notes', () => {
-      render(<Harness initial={boardWith(50)} variant="inlineDispatch" />);
+      renderBoard(boardWith(50), { variant: 'inlineDispatch' });
       press(noteAt(0), 100, 100);
 
       const rendered = rendersDuring(() => {
@@ -163,7 +226,7 @@ describe('Board', () => {
     it('the render probe sees notes that were not moved', () => {
       // The probe's own control: a probe that only reported the dispatched note would pass the
       // tests above and fail this one.
-      render(<Harness initial={boardWith(50)} variant="clonedNotes" />);
+      renderBoard(boardWith(50), { variant: 'clonedNotes' });
       press(noteAt(0), 100, 100);
 
       const rendered = rendersDuring(() => {
@@ -173,11 +236,31 @@ describe('Board', () => {
       expect(rendered).toHaveLength(50);
       expect(positionOf(noteAt(0))).toEqual({ x: 40, y: 60 });
     });
+
+    it('creating a note re-renders no note while dragging, then only the new one (50 notes)', () => {
+      renderBoard(boardWith(50));
+      press(board(), 600, 600);
+      move(605, 600);
+
+      const whileDragging = rendersDuring(() => {
+        move(700, 700);
+      });
+
+      expect(whileDragging).toEqual([]);
+      // The preview really changed, so the empty list can't pass by the drag doing nothing.
+      expect(previewRect()).toEqual({ x: 600, y: 600, width: 100, height: 100 });
+
+      const onRelease = rendersDuring(() => {
+        release();
+      });
+
+      expect(onRelease).toEqual(['new-1']);
+    });
   });
 
   describe('dragging a note', () => {
     it('pressing a note brings it to the front', () => {
-      render(<Harness initial={boardWith(3)} />);
+      renderBoard(boardWith(3));
 
       press(noteAt(0), 100, 100);
 
@@ -186,7 +269,7 @@ describe('Board', () => {
     });
 
     it('positions the note from the press point, not by summing moves', () => {
-      render(<Harness initial={boardWith(1)} />);
+      renderBoard(boardWith(1));
 
       press(noteAt(0), 100, 100);
       move(130, 150);
@@ -196,7 +279,7 @@ describe('Board', () => {
     });
 
     it('keeps the note inside the board', () => {
-      render(<Harness initial={boardWith(1)} />);
+      renderBoard(boardWith(1));
 
       press(noteAt(0), 100, 100);
       move(5000, -5000);
@@ -210,7 +293,7 @@ describe('Board', () => {
     });
 
     it('ignores presses with a non-primary button', () => {
-      render(<Harness initial={boardWith(1)} />);
+      renderBoard(boardWith(1));
 
       press(noteAt(0), 100, 100, { button: 2 });
       move(130, 150);
@@ -220,7 +303,7 @@ describe('Board', () => {
     });
 
     it('stops following the pointer after release', () => {
-      render(<Harness initial={boardWith(1)} />);
+      renderBoard(boardWith(1));
 
       press(noteAt(0), 100, 100);
       move(130, 150);
@@ -231,11 +314,21 @@ describe('Board', () => {
 
       expect(positionOf(noteAt(0))).toEqual({ x: 40, y: 60 });
     });
+
+    it('keeps the note inside a smaller board', () => {
+      renderBoard(boardWith(1), { size: { width: 600, height: 400 } });
+
+      press(noteAt(0), 100, 100);
+      move(5000, 5000);
+
+      // 600 − 100 and 400 − 100: the board's own size.
+      expect(positionOf(noteAt(0))).toEqual({ x: 500, y: 300 });
+    });
   });
 
   describe('one gesture owner', () => {
     it('captures the pointer on the board', () => {
-      render(<Harness initial={boardWith(1)} />);
+      renderBoard(boardWith(1));
 
       press(noteAt(0), 100, 100, { pointerId: 7 });
 
@@ -245,7 +338,7 @@ describe('Board', () => {
     });
 
     it('ignores a second pointer while a drag is active', () => {
-      render(<Harness initial={boardWith(2)} />);
+      renderBoard(boardWith(2));
 
       press(noteAt(0), 100, 100, { pointerId: 1 });
       press(noteAt(1), 100, 100, { pointerId: 2 });
@@ -257,7 +350,7 @@ describe('Board', () => {
     });
 
     it('ignores moves from another pointer', () => {
-      render(<Harness initial={boardWith(1)} />);
+      renderBoard(boardWith(1));
 
       press(noteAt(0), 100, 100, { pointerId: 1 });
       move(300, 300, 2);
@@ -268,7 +361,7 @@ describe('Board', () => {
     it.each(['pointerUp', 'pointerCancel'] as const)(
       "another pointer's %s does not end the drag",
       (eventName) => {
-        render(<Harness initial={boardWith(1)} />);
+        renderBoard(boardWith(1));
 
         press(noteAt(0), 100, 100, { pointerId: 1 });
         // Ignored: a gesture is already active.
@@ -281,7 +374,7 @@ describe('Board', () => {
     );
 
     it.each(['pointerCancel', 'lostPointerCapture'] as const)('%s ends the drag', (eventName) => {
-      render(<Harness initial={boardWith(1)} />);
+      renderBoard(boardWith(1));
 
       press(noteAt(0), 100, 100);
       fireEvent[eventName](board(), { pointerId: 1 });
@@ -290,19 +383,8 @@ describe('Board', () => {
       expect(positionOf(noteAt(0))).toEqual({ x: 10, y: 10 });
     });
 
-    it('a press on the empty board does nothing yet', () => {
-      render(<Harness initial={boardWith(1)} />);
-
-      press(board(), 500, 500);
-      move(600, 600);
-
-      expect(setPointerCapture).not.toHaveBeenCalled();
-      expect(positionOf(noteAt(0))).toEqual({ x: 10, y: 10 });
-      expect(noteAt(0).style.zIndex).toBe('1');
-    });
-
     it('a second drag starts where the first ended', () => {
-      render(<Harness initial={boardWith(1)} />);
+      renderBoard(boardWith(1));
 
       press(noteAt(0), 100, 100);
       move(130, 150);
@@ -311,6 +393,173 @@ describe('Board', () => {
       move(210, 210);
 
       expect(positionOf(noteAt(0))).toEqual({ x: 50, y: 70 });
+    });
+  });
+
+  describe('creating a note', () => {
+    it('a click on the empty board creates a default-size note at the click point', () => {
+      renderBoard(boardWith(1));
+
+      press(board(), 300, 200);
+      expect(preview()).toBeNull();
+      release();
+
+      expect(notes()).toHaveLength(2);
+      expect(rectOf(noteAt(1))).toEqual({ x: 300, y: 200, width: 200, height: 150 });
+      expect(noteAt(1).style.zIndex).toBe('2');
+      expect(setPointerCapture).toHaveBeenCalledTimes(1);
+      expect(setPointerCapture.mock.contexts[0]).toBe(board());
+      expect(preview()).toBeNull();
+    });
+
+    it('a click near the edge creates the note inside the board', () => {
+      renderBoard(boardWith(1));
+
+      press(board(), 950, 700);
+      release();
+
+      expect(rectOf(noteAt(1))).toEqual({ x: 824, y: 618, width: 200, height: 150 });
+    });
+
+    it('a press that moves 4px or less is still a click', () => {
+      renderBoard(boardWith(1));
+
+      press(board(), 300, 200);
+      move(304, 196);
+      expect(preview()).toBeNull();
+      release();
+
+      expect(rectOf(noteAt(1))).toEqual({ x: 300, y: 200, width: 200, height: 150 });
+    });
+
+    it('dragging past 4px creates the dragged rectangle', () => {
+      renderBoard(boardWith(1));
+
+      press(board(), 300, 200);
+      // Past the slop on y only.
+      move(300, 205);
+      expect(preview()).not.toBeNull();
+      move(500, 400);
+      release();
+
+      expect(rectOf(noteAt(1))).toEqual({ x: 300, y: 200, width: 200, height: 200 });
+      expect(preview()).toBeNull();
+    });
+
+    it('dragging up and left creates the normalized rectangle', () => {
+      renderBoard(boardWith(1));
+
+      press(board(), 500, 400);
+      move(300, 250);
+      release();
+
+      expect(rectOf(noteAt(1))).toEqual({ x: 300, y: 250, width: 200, height: 150 });
+    });
+
+    it('a drag that comes back near the press point creates a minimum-size note', () => {
+      renderBoard(boardWith(1));
+
+      press(board(), 300, 200);
+      move(500, 400);
+      move(302, 201);
+      release();
+
+      // Still a drag once it left the slop, so the rect grows to the minimum: no click note.
+      expect(rectOf(noteAt(1))).toEqual({ x: 300, y: 200, width: 80, height: 60 });
+    });
+
+    it('the dragged rectangle stays inside the board', () => {
+      renderBoard(boardWith(1));
+
+      press(board(), 900, 700);
+      move(5000, 5000);
+      release();
+
+      expect(rectOf(noteAt(1))).toEqual({ x: 900, y: 700, width: 124, height: 68 });
+    });
+
+    it('the preview shows the rectangle that will be created', () => {
+      renderBoard(boardWith(1));
+
+      press(board(), 300, 200);
+      move(500, 400);
+      expect(previewRect()).toEqual({ x: 300, y: 200, width: 200, height: 200 });
+      move(310, 210);
+      expect(previewRect()).toEqual({ x: 300, y: 200, width: 80, height: 60 });
+    });
+
+    it.each(['pointerCancel', 'lostPointerCapture'] as const)(
+      '%s while creating creates nothing',
+      (eventName) => {
+        renderBoard(boardWith(1));
+
+        press(board(), 300, 200);
+        move(500, 400);
+        fireEvent[eventName](board(), { pointerId: 1 });
+
+        expect(notes()).toHaveLength(1);
+        expect(preview()).toBeNull();
+
+        press(board(), 600, 500);
+        release();
+
+        // The aborted create consumed no id.
+        expect(noteAt(1).dataset.noteId).toBe('new-1');
+      },
+    );
+
+    it('creating uses board coordinates', () => {
+      renderBoard(boardWith(1), { offset: { x: 20, y: 30 } });
+
+      press(board(), 320, 230);
+      move(520, 430);
+      release();
+      expect(rectOf(noteAt(1))).toEqual({ x: 300, y: 200, width: 200, height: 200 });
+
+      // The click path converts too.
+      press(board(), 340, 250);
+      release();
+      expect(rectOf(noteAt(2))).toEqual({ x: 320, y: 220, width: 200, height: 150 });
+    });
+
+    it("a created note is clamped to the board's real size", () => {
+      renderBoard(boardWith(1), { size: { width: 600, height: 400 } });
+
+      press(board(), 500, 350);
+      release();
+
+      expect(rectOf(noteAt(1))).toEqual({ x: 400, y: 250, width: 200, height: 150 });
+    });
+
+    it('ignores a non-primary press on the empty board', () => {
+      renderBoard(boardWith(1));
+
+      press(board(), 300, 200, { button: 2 });
+      release();
+
+      expect(notes()).toHaveLength(1);
+    });
+
+    it('ignores moves from another pointer while creating', () => {
+      renderBoard(boardWith(1));
+
+      press(board(), 300, 200, { pointerId: 1 });
+      move(500, 400, 2);
+      expect(preview()).toBeNull();
+      release(1);
+
+      expect(rectOf(noteAt(1))).toEqual({ x: 300, y: 200, width: 200, height: 150 });
+    });
+
+    it('a created note can be dragged right away', () => {
+      renderBoard(boardWith(1));
+
+      press(board(), 300, 200);
+      release();
+      press(noteAt(1), 310, 210);
+      move(330, 230);
+
+      expect(positionOf(noteAt(1))).toEqual({ x: 320, y: 220 });
     });
   });
 });
