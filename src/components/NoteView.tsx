@@ -1,6 +1,6 @@
 import { memo, Profiler } from 'react';
 import type { Note } from '../domain/note.ts';
-import { noteTargetProps } from '../interaction/useBoardGesture.ts';
+import { noteTargetProps, resizeHandleProps } from '../interaction/useBoardGesture.ts';
 import styles from './NoteView.module.css';
 import { rectStyle } from './rectStyle.ts';
 import { onNoteRender } from './renderProbe.ts';
@@ -17,7 +17,9 @@ function NoteViewImpl({ note }: NoteViewProps) {
         aria-label="Sticky note"
         {...noteTargetProps(note.id)}
         style={{ ...rectStyle(note.rect), zIndex: note.z }}
-      />
+      >
+        <div className={styles.resizeHandle} {...resizeHandleProps()} />
+      </article>
     </Profiler>
   );
 }

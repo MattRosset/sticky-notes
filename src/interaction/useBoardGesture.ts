@@ -4,6 +4,7 @@ import {
   movedPosition,
   rectAt,
   rectFromDrag,
+  resizedSize,
   type Point,
   type Rect,
   type Size,
@@ -20,6 +21,17 @@ type Gesture =
       readonly origin: Point;
       readonly noteId: NoteId;
       /** The note's rect at press time; every move is computed from it, never accumulated. */
+      readonly startRect: Rect;
+      /** Board size at press time. */
+      readonly bounds: Size;
+    }
+  | {
+      readonly kind: 'resizing';
+      readonly pointerId: number;
+      /** Pointer position at press, in client coordinates. */
+      readonly origin: Point;
+      readonly noteId: NoteId;
+      /** The note's rect at press time; every resize is computed from it, never accumulated. */
       readonly startRect: Rect;
       /** Board size at press time. */
       readonly bounds: Size;
@@ -69,21 +81,33 @@ export function noteTargetProps(id: NoteId): { readonly 'data-note-id': NoteId }
   return { 'data-note-id': id };
 }
 
-type PressTarget = { readonly kind: 'board' } | { readonly kind: 'note'; readonly note: Note };
+/** Spread onto a note's resize handle so a press on it resizes the note instead of moving it. */
+export function resizeHandleProps(): { readonly 'data-resize-handle': true } {
+  return { 'data-resize-handle': true };
+}
 
-/** What a press landed on: a note, or the empty board (also for an id no longer in `notes`). */
+type PressTarget =
+  | { readonly kind: 'board' }
+  | { readonly kind: 'note'; readonly note: Note }
+  | { readonly kind: 'resizeHandle'; readonly note: Note };
+
+/**
+ * What a press landed on: a note's resize handle, the note itself, or the empty board (also for
+ * an id no longer in `notes`).
+ */
 function classifyPress(target: EventTarget, notes: readonly Note[]): PressTarget {
   if (!(target instanceof Element)) return { kind: 'board' };
   const raw = target.closest('[data-note-id]')?.getAttribute('data-note-id');
   const note = notes.find((candidate) => candidate.id === raw);
   if (note === undefined) return { kind: 'board' };
+  if (target.closest('[data-resize-handle]') !== null) return { kind: 'resizeHandle', note };
   return { kind: 'note', note };
 }
 
 /**
  * Owns the single pointer gesture of the whole board: classifies each primary-button press as a
- * note or the empty board, and turns press-drag-release into board actions: moving the note, or
- * creating a new one.
+ * note, a note's resize handle or the empty board, and turns press-drag-release into board
+ * actions: moving the note, resizing it, or creating a new one.
  *
  * The pointer is captured on the board element, not on the pressed note:
  * - one element receives every event of the gesture, the same element whose handlers own it, so
@@ -183,6 +207,20 @@ export function useBoardGesture(
           dispatch({ type: 'note/broughtToFront', id: note.id });
           break;
         }
+        case 'resizeHandle': {
+          const { note } = pressed;
+          gesture.current = {
+            kind: 'resizing',
+            pointerId,
+            origin,
+            noteId: note.id,
+            startRect: note.rect,
+            bounds,
+          };
+          // Any interaction with a note raises it, the handle as much as the body.
+          dispatch({ type: 'note/broughtToFront', id: note.id });
+          break;
+        }
       }
     },
     onPointerMove: (event) => {
@@ -195,6 +233,14 @@ export function useBoardGesture(
             type: 'note/moved',
             id: current.noteId,
             position: movedPosition(current.startRect, delta, current.bounds),
+          });
+          break;
+        }
+        case 'resizing': {
+          dispatch({
+            type: 'note/resized',
+            id: current.noteId,
+            size: resizedSize(current.startRect, delta, MIN_NOTE_SIZE, current.bounds),
           });
           break;
         }

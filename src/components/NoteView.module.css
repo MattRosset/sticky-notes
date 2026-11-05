@@ -14,3 +14,21 @@
 .note:active {
   cursor: grabbing;
 }
+
+.resizeHandle {
+  /* Bottom-right grip, inside the note so it never leaves the note's clamped rect. */
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  background: linear-gradient(
+    135deg,
+    transparent 0 55%,
+    rgb(0 0 0 / 0.25) 55% 62%,
+    transparent 62% 75%,
+    rgb(0 0 0 / 0.25) 75% 82%,
+    transparent 82%
+  );
+}

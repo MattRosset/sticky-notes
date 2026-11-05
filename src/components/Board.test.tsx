@@ -151,6 +151,12 @@ function notes(): HTMLElement[] {
   return screen.getAllByRole('article');
 }
 
+function handleOf(note: HTMLElement): HTMLElement {
+  const handle = note.querySelector('[data-resize-handle]');
+  if (!(handle instanceof HTMLElement)) throw new Error('note has no resize handle');
+  return handle;
+}
+
 /** Presses fire on the pressed element: a note, or the board itself for the empty board. */
 function press(
   element: HTMLElement,
@@ -255,6 +261,19 @@ describe('Board', () => {
       });
 
       expect(onRelease).toEqual(['new-1']);
+    });
+
+    it('resizing one note re-renders only that note (50 notes)', () => {
+      renderBoard(boardWith(50));
+      press(handleOf(noteAt(0)), 105, 105);
+
+      const rendered = rendersDuring(() => {
+        move(135, 125);
+      });
+
+      expect(rendered).toEqual(['0']);
+      // The note really resized, so the count can't pass by nothing rendering.
+      expect(rectOf(noteAt(0))).toEqual({ x: 10, y: 10, width: 130, height: 120 });
     });
   });
 
@@ -560,6 +579,77 @@ describe('Board', () => {
       move(330, 230);
 
       expect(positionOf(noteAt(1))).toEqual({ x: 320, y: 220 });
+    });
+  });
+
+  describe('resizing a note', () => {
+    it('dragging the handle resizes the note from the press point, keeping its top-left', () => {
+      renderBoard(boardWith(1));
+
+      press(handleOf(noteAt(0)), 105, 105);
+      move(135, 125);
+      move(145, 135);
+
+      expect(rectOf(noteAt(0))).toEqual({ x: 10, y: 10, width: 140, height: 130 });
+      // A handle press neither moves the note nor creates one.
+      expect(notes()).toHaveLength(1);
+    });
+
+    it('pressing the handle brings the note to the front and captures on the board', () => {
+      renderBoard(boardWith(3));
+
+      press(handleOf(noteAt(0)), 105, 105, { pointerId: 7 });
+
+      expect(noteAt(0).style.zIndex).toBe('4');
+      expect(setPointerCapture).toHaveBeenCalledTimes(1);
+      expect(setPointerCapture).toHaveBeenCalledWith(7);
+      expect(setPointerCapture.mock.contexts[0]).toBe(board());
+    });
+
+    it('resizing keeps the minimum size', () => {
+      renderBoard(boardWith(1));
+
+      press(handleOf(noteAt(0)), 105, 105);
+      move(0, 0);
+
+      expect(rectOf(noteAt(0))).toEqual({ x: 10, y: 10, width: 80, height: 60 });
+    });
+
+    it("resizing stops at the board's edges", () => {
+      renderBoard(boardWith(1));
+
+      press(handleOf(noteAt(0)), 105, 105);
+      move(5000, 5000);
+
+      expect(rectOf(noteAt(0))).toEqual({ x: 10, y: 10, width: 1014, height: 758 });
+    });
+
+    it("resizing is clamped to the board's real size", () => {
+      renderBoard(boardWith(1), { size: { width: 600, height: 400 } });
+
+      press(handleOf(noteAt(0)), 105, 105);
+      move(5000, 5000);
+
+      expect(rectOf(noteAt(0))).toEqual({ x: 10, y: 10, width: 590, height: 390 });
+    });
+
+    it('ignores moves from another pointer while resizing', () => {
+      renderBoard(boardWith(1));
+
+      press(handleOf(noteAt(0)), 105, 105, { pointerId: 1 });
+      move(135, 125, 2);
+
+      expect(rectOf(noteAt(0))).toEqual({ x: 10, y: 10, width: 100, height: 100 });
+    });
+
+    it("a descendant's lost capture does not end the gesture", () => {
+      renderBoard(boardWith(1));
+
+      press(noteAt(0), 100, 100);
+      fireEvent.lostPointerCapture(handleOf(noteAt(0)), { pointerId: 1 });
+      move(130, 150);
+
+      expect(positionOf(noteAt(0))).toEqual({ x: 40, y: 60 });
     });
   });
 });
