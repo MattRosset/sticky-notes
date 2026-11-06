@@ -4,6 +4,8 @@ A single-page sticky-notes board for the desktop, written in React and TypeScrip
 component libraries. The only runtime dependencies are `react` and `react-dom`; layout, drag
 handling and styles are written for this app.
 
+Live demo: https://sticky-notes-three-pi.vercel.app/
+
 ## Running it
 
 Requires Node.js 24 and pnpm 10. Node 24 ships Corepack, so `corepack enable` installs the pnpm
