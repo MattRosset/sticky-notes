@@ -190,3 +190,24 @@ test('a reload right after a change keeps every note', async ({ page }) => {
   await expect.poll(() => notesNow(page)).toEqual(before);
   await expect(editor(page)).toHaveCount(0);
 });
+
+test('a click right after drawing a note only closes its editor', async ({ page }) => {
+  // The board's cursor stays visible before and while drawing.
+  await expect(board(page)).toHaveCSS('cursor', 'cell');
+  await page.mouse.move(400, 300);
+  await page.mouse.down();
+  await page.mouse.move(700, 500, { steps: 10 });
+  await expect(board(page)).toHaveAttribute('data-gesture', 'creating');
+  await expect(board(page)).toHaveCSS('cursor', 'cell');
+  await page.mouse.up();
+  await expect(editor(page)).toBeFocused();
+
+  // A click where the pointer was released, while the new note's editor is open, only closes the
+  // editor; the next click on the empty board creates a note.
+  await page.mouse.click(700, 500);
+  await expect(editor(page)).toHaveCount(0);
+  await expect.poll(async () => (await notesNow(page)).length).toBe(1);
+
+  await page.mouse.click(150, 600);
+  await expect.poll(async () => (await notesNow(page)).length).toBe(2);
+});

@@ -6,8 +6,11 @@
   background: #f3f2ef;
   /* No text selection while dragging; the text editor re-enables it inside itself. */
   user-select: none;
-  /* A press on the empty board draws a note. */
-  cursor: crosshair;
+  /*
+   * A press on the empty board draws a note. `cell`, not `crosshair`: on Windows the crosshair is
+   * a one-pixel cross that almost disappears on this background.
+   */
+  cursor: cell;
 }
 
 .hint {
@@ -73,5 +76,5 @@
 
 .board[data-gesture='creating'],
 .board[data-gesture='creating'] * {
-  cursor: crosshair;
+  cursor: cell;
 }
