@@ -108,3 +108,10 @@ return promises) 300 ms after changes settle and when the page is hidden; the st
 checked field by field when read, without type casts. The localStorage adapter is the only
 implementation today; a REST one would implement the same interface.
 See [ADR-002](docs/adr/002-persistence.md).
+
+## Known issues
+
+- In Chrome on Windows, right after dragging a note and opening its editor, the text cursor can
+  stay invisible for about 2–3 seconds. The app state is correct during that time (focus, gesture
+  state and computed cursor were verified); the cause looks like a cursor-rendering detail in the
+  browser and was not isolated.
