@@ -82,10 +82,10 @@ A CI job is set up to run the suite on Chromium and Firefox on Linux; it has not
 The code is split into five layers with one-way imports: `domain` (notes, geometry and the
 board reducer, plain TypeScript), `interaction` (pointer and editor input turned into domain
 actions), `components` (rendering), `persistence` (storage) and `app` (wiring). ESLint enforces
-the boundaries: each layer below `app` has `no-restricted-imports` rules whose messages say where the code
-belongs instead, and `domain` may not touch `window`, `document`, randomness or the clock, so it
-runs in plain Node tests. `tests/architecture` lints a deliberately broken file per rule to prove
-each rule still fires.
+the boundaries: each layer below `app` has `no-restricted-imports` rules whose messages say
+where the code belongs instead, and `domain` may not touch `window`, `document`, randomness or
+the clock, so it runs in plain Node tests. `tests/architecture` lints a deliberately broken file
+per rule to prove each rule still fires.
 
 All pointer input is owned by the board. One hook, `useBoardGesture`, handles presses on the
 board element, works out what was pressed (a note, its resize handle, the trash or the empty
@@ -103,8 +103,8 @@ identity of every note it doesn't change, and notes are memoized components whos
 their note and whether it is being edited, so dragging or typing re-renders just that note. A
 render-count test enforces this with 50 notes, using a `<Profiler>` inside the note component;
 a control case, where every note object is recreated on each render, checks that the probe does
-report all 50. The state is saved through an
-asynchronous `NotesRepository` (`load` and `save` return promises) 300 ms after changes settle and
-when the page is hidden; the stored JSON is checked field by field when read, without type casts.
-The localStorage adapter is the only implementation today; a REST one would implement the same
-interface. See [ADR-002](docs/adr/002-persistence.md).
+report all 50. The state is saved through an asynchronous `NotesRepository` (`load` and `save`
+return promises) 300 ms after changes settle and when the page is hidden; the stored JSON is
+checked field by field when read, without type casts. The localStorage adapter is the only
+implementation today; a REST one would implement the same interface.
+See [ADR-002](docs/adr/002-persistence.md).
