@@ -74,8 +74,8 @@ Tested with the end-to-end suite on Windows 11 at 1024×768, Playwright 1.64.1:
 | Chromium | 156.0.8078.4 | Playwright's build |
 | Firefox | 157.0 | Playwright's build of Firefox, not Mozilla's release |
 
-Not tested: Chrome on macOS, Firefox on macOS and Linux, and Mozilla's own Firefox release.
-A CI job is set up to run the suite on Chromium and Firefox on Linux; it has not run yet.
+CI also runs the suite on every push, on Linux with Playwright's Chromium and Firefox builds.
+Not tested: Chrome on macOS, Firefox on macOS, and Mozilla's own Firefox release.
 
 ## Architecture
 
