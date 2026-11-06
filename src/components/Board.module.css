@@ -7,10 +7,10 @@
   /* No text selection while dragging; the text editor re-enables it inside itself. */
   user-select: none;
   /*
-   * A press on the empty board draws a note. `cell`, not `crosshair`: on Windows the crosshair is
-   * a one-pixel cross that almost disappears on this background.
+   * The board, the notes and every gesture use cursors the system draws with their own contrast
+   * (default, move, nwse-resize): `cell` and `crosshair` vanish on this light background.
    */
-  cursor: cell;
+  cursor: default;
 }
 
 .hint {
@@ -66,7 +66,7 @@
  */
 .board[data-gesture='moving'],
 .board[data-gesture='moving'] * {
-  cursor: grabbing;
+  cursor: move;
 }
 
 .board[data-gesture='resizing'],
@@ -76,5 +76,5 @@
 
 .board[data-gesture='creating'],
 .board[data-gesture='creating'] * {
-  cursor: cell;
+  cursor: default;
 }

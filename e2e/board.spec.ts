@@ -192,13 +192,13 @@ test('a reload right after a change keeps every note', async ({ page }) => {
 });
 
 test('a click right after drawing a note only closes its editor', async ({ page }) => {
-  // The board's cursor stays visible before and while drawing.
-  await expect(board(page)).toHaveCSS('cursor', 'cell');
+  // The board keeps the system's default cursor before and while drawing.
+  await expect(board(page)).toHaveCSS('cursor', 'default');
   await page.mouse.move(400, 300);
   await page.mouse.down();
   await page.mouse.move(700, 500, { steps: 10 });
   await expect(board(page)).toHaveAttribute('data-gesture', 'creating');
-  await expect(board(page)).toHaveCSS('cursor', 'cell');
+  await expect(board(page)).toHaveCSS('cursor', 'default');
   await page.mouse.up();
   await expect(editor(page)).toBeFocused();
 
@@ -210,4 +210,24 @@ test('a click right after drawing a note only closes its editor', async ({ page 
 
   await page.mouse.click(150, 600);
   await expect.poll(async () => (await notesNow(page)).length).toBe(2);
+});
+
+test('the board and notes use system cursors, also while a note is moved', async ({ page }) => {
+  const note = page.getByRole('article', { name: 'Sticky note' });
+  await createByClick(page, 200, 200);
+  await closeEditor(page);
+  await expect(board(page)).toHaveCSS('cursor', 'default');
+  await expect(note).toHaveCSS('cursor', 'move');
+
+  await page.mouse.move(300, 275);
+  await page.mouse.down();
+  await page.mouse.move(450, 355, { steps: 10 });
+  await expect(board(page)).toHaveAttribute('data-gesture', 'moving');
+  await expect(board(page)).toHaveCSS('cursor', 'move');
+  await expect(note).toHaveCSS('cursor', 'move');
+
+  await page.mouse.up();
+  await expect(board(page)).toHaveAttribute('data-gesture', 'idle');
+  await expect(board(page)).toHaveCSS('cursor', 'default');
+  await expect(note).toHaveCSS('cursor', 'move');
 });

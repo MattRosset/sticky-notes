@@ -11,7 +11,8 @@
   padding: 12px;
   /* Stops the browser turning a touch drag into a scroll, which would fire pointercancel. */
   touch-action: none;
-  cursor: grab;
+  /* A system cursor with its own contrast; the text inside inherits it (see Board.module.css). */
+  cursor: move;
 }
 
 .resizeHandle {
